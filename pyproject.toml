@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stereoforge"
+version = "0.1.0"
+description = "High-performance stereoscopic 3D MVC video encoder and packager"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "writesimply.bcc" },
+    { name = "Gemini" }
+]
+keywords = ["3d", "mvc", "stereoscopic", "h264", "blu-ray", "vr"]
+dependencies = [
+    "numpy>=1.24.0",
+    "opencv-python>=4.8.0",
+    "PySide6>=6.6.0",
+]
+
+[project.scripts]
+stereoforge = "stereoforge.cli:main"
+stereoforge-gui = "stereoforge.ui.app:main"
