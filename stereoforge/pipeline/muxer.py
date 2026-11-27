@@ -303,11 +303,13 @@ class MuxerEngine:
         # tsMuxeR uses --blu-ray for both folder structures and .iso disk images
         meta_lines = ["MUXOPT --blu-ray --no-pcr-on-video-pid --new-audio-pes --vbr --auto-chapters=5"]
 
-        # Base View Track (Left Eye)
-        meta_lines.append(f"V_MPEG4/ISO/AVC, {base_video_path}, fps={fps}, insertSEI, contSPS")
+        # Base View Track (Left Eye) - Quoted paths with forward slashes for cross-platform tsMuxeR
+        base_str = str(base_video_path).replace("\\", "/")
+        meta_lines.append(f'V_MPEG4/ISO/AVC, "{base_str}", fps={fps}, insertSEI, contSPS')
 
         # Dependent View Track (Right Eye MVC)
-        meta_lines.append(f"V_MPEG4/ISO/MVC, {dependent_mvc_path}, fps={fps}")
+        dep_str = str(dependent_mvc_path).replace("\\", "/")
+        meta_lines.append(f'V_MPEG4/ISO/MVC, "{dep_str}", fps={fps}')
 
         temp_audio_ac3: Optional[Path] = None
         if audio_source_path and audio_source_path.exists():
@@ -321,12 +323,14 @@ class MuxerEngine:
                         stderr=subprocess.DEVNULL,
                         check=True
                     )
-                    meta_lines.append(f"A_AC3, {temp_audio_ac3}")
+                    audio_str = str(temp_audio_ac3).replace("\\", "/")
+                    meta_lines.append(f'A_AC3, "{audio_str}"')
                 except Exception:
                     # In case of no audio track in file
                     pass
             else:
-                meta_lines.append(f"A_AC3, {audio_source_path}")
+                audio_str = str(audio_source_path).replace("\\", "/")
+                meta_lines.append(f'A_AC3, "{audio_str}"')
 
         meta_file = output_dir_or_iso.parent / "stereoforge_tsmuxer.meta"
         with open(meta_file, "w", encoding="utf-8") as f:
