@@ -161,8 +161,10 @@ class MuxerEngine:
         # without decoding artifacts, while 3D players access both stereoscopic eyes.
         cmd.extend([
             "--track-name", "0:Left Eye (2D Base)",
+            "--display-dimensions", "0:1920x1080",
             str(base_video_path),
             "--track-name", "0:Right Eye (3D View)",
+            "--display-dimensions", "0:1920x1080",
             str(dependent_video_path)
         ])
 

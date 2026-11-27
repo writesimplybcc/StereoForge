@@ -190,21 +190,21 @@ class IngestionEngine:
         fmt = profile.stereo_format
 
         if fmt == StereoFormat.FULL_SBS:
-            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h}"
-            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h}"
+            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
         elif fmt == StereoFormat.HALF_SBS:
-            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h}"
-            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h}"
+            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
         elif fmt == StereoFormat.FULL_TAB:
-            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h}"
-            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h}"
+            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
         elif fmt == StereoFormat.HALF_TAB:
-            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h}"
-            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h}"
+            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
         else:
             # Passthrough or default 1:1
-            l_crop = f"scale={target_w}:{target_h}"
-            r_crop = f"scale={target_w}:{target_h}"
+            l_crop = f"scale={target_w}:{target_h},setsar=1"
+            r_crop = f"scale={target_w}:{target_h},setsar=1"
 
         # HDR to SDR Tone Mapping if needed
         hdr_filter = ""
