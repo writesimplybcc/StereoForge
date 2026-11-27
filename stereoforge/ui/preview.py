@@ -31,34 +31,21 @@ def get_anaglyph_filter_config(
     is_dual: bool = False
 ) -> Tuple[str, bool]:
     """Generates the appropriate FFmpeg stereo3d filter string."""
-    actual_mode = mode
-    effective_swap = swap_eyes
-
-    # Invert inputs for complementary-reversed eyewear:
-    # mgmd: Magenta Left / Green Right (inverted agmd)
-    # bybd: Blue Left / Amber Right (inverted aybd)
-    if mode == "mgmd":
-        actual_mode = "agmd"
-        effective_swap = not swap_eyes
-    elif mode == "bybd":
-        actual_mode = "aybd"
-        effective_swap = not swap_eyes
-
     if is_dual:
-        if effective_swap:
-            filter_str = f"[1:v]scale=960:1080[l];[0:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{actual_mode},scale=960:540"
+        if swap_eyes:
+            filter_str = f"[1:v]scale=960:1080[l];[0:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{mode},scale=960:540"
         else:
-            filter_str = f"[0:v]scale=960:1080[l];[1:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{actual_mode},scale=960:540"
+            filter_str = f"[0:v]scale=960:1080[l];[1:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{mode},scale=960:540"
         return filter_str, True
 
     if format_type in (StereoFormat.FULL_SBS, StereoFormat.HALF_SBS):
-        in_code = "sbs2r" if effective_swap else "sbs2l"
+        in_code = "sbs2r" if swap_eyes else "sbs2l"
     elif format_type in (StereoFormat.FULL_TAB, StereoFormat.HALF_TAB):
-        in_code = "ab2r" if effective_swap else "ab2l"
+        in_code = "ab2r" if swap_eyes else "ab2l"
     else:
-        in_code = "sbs2r" if effective_swap else "sbs2l"
+        in_code = "sbs2r" if swap_eyes else "sbs2l"
 
-    filter_str = f"stereo3d={in_code}:{actual_mode},scale=960:540"
+    filter_str = f"stereo3d={in_code}:{mode},scale=960:540"
     return filter_str, False
 
 
@@ -317,10 +304,8 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
             ("🔴🔵 Red / Cyan (Dubois Color - Recommended)", "arcd"),
             ("🔴🔵 Red / Cyan (Standard Full Color)", "arcc"),
             ("🔴🔵 Red / Cyan (Half Color)", "arch"),
-            ("🟣🟢 Magenta / Green (Trioscopic: Magenta Left / Green Right)", "mgmd"),
-            ("🟢🟣 Green / Magenta (Trioscopic: Green Left / Magenta Right)", "agmd"),
-            ("🔵🟡 Blue / Amber (ColorCode: Blue Left / Amber Right)", "bybd"),
-            ("🟡🔵 Amber / Blue (ColorCode: Amber Left / Blue Right)", "aybd"),
+            ("🟢🟣 Green / Magenta (Trioscopic 3D)", "agmd"),
+            ("🟡🔵 Amber / Blue (ColorCode 3D)", "aybd"),
             ("👁️ Left Eye Only (2D Base)", "ml"),
             ("👁️ Right Eye Only (2D Dependent)", "mr")
         ]
@@ -352,11 +337,10 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         g_icon = QLabel("💡")
         g_icon.setFont(QFont("Segoe UI", 14))
         g_text = QLabel(
-            "<b>How to verify 3D Orientation:</b> Put on your 3D glasses (e.g. Red on Left Eye for Red/Cyan). "
+            "<b>How to verify 3D Orientation:</b> Put on your matching 3D glasses (e.g. Red on Left Eye for Red/Cyan modes). "
             "Foreground elements should naturally pop out with depth. "
             "If objects feel inverted or sink inward (pseudoscopic), click <b>'🔄 Swap Left/Right Eyes'</b>.<br/>"
-            "<i>Eyewear Orientations:</i> If using Magenta/Green glasses, select <b>'Magenta / Green'</b>. "
-            "If using ColorCode glasses with Blue on the left, select <b>'Blue / Amber'</b>."
+            "<i>Note on Glasses:</i> Red/Cyan modes require Red/Cyan glasses; Green/Magenta requires Trioscopic glasses; Amber/Blue requires ColorCode 3D glasses."
         )
         g_text.setWordWrap(True)
         g_text.setStyleSheet("font-size: 11px; color: #CBD5E1;")
