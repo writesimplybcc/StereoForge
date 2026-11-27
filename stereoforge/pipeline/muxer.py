@@ -82,6 +82,36 @@ def find_tsmuxer(preferred: Optional[str] = None) -> str:
     return "tsMuxeR"
 
 
+def find_subwoofa(preferred: Optional[str] = None) -> str:
+    if preferred and (shutil.which(preferred) or Path(preferred).is_file()):
+        return preferred
+    if shutil.which("subwoofa"):
+        return "subwoofa"
+    repo_root = Path(__file__).resolve().parents[2]
+    candidates = [
+        repo_root / "tools" / "subwoofa-cli.exe",
+        repo_root / "tools" / "subwoofa.exe",
+        repo_root / "bin" / "subwoofa-cli.exe",
+        repo_root / "bin" / "subwoofa.exe",
+        repo_root / "subwoofa-cli.exe",
+        repo_root / "subwoofa.exe",
+        repo_root / "tools" / "subwoofa",
+        repo_root / "bin" / "subwoofa",
+        repo_root / "subwoofa",
+        Path.home() / "AppData" / "Local" / "Subwoofa" / "subwoofa.exe",
+        Path.home() / "AppData" / "Local" / "Programs" / "Subwoofa" / "subwoofa.exe",
+        Path(r"C:\Program Files\Subwoofa\subwoofa.exe"),
+        Path(r"C:\Program Files (x86)\Subwoofa\subwoofa.exe"),
+        Path("/opt/homebrew/bin/subwoofa"),
+        Path("/usr/local/bin/subwoofa"),
+        Path("/usr/bin/subwoofa"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return "subwoofa"
+
+
 def interleave_mvc_streams(base_path: Path, dependent_path: Path, output_path: Path) -> Path:
     """Interleaves Base View AVC and Dependent View MVC into a single Annex B stream.
 
@@ -185,16 +215,21 @@ class MuxerEngine:
     def __init__(
         self,
         tsmuxer_bin: Optional[str] = None,
-        mkvmerge_bin: Optional[str] = None
+        mkvmerge_bin: Optional[str] = None,
+        subwoofa_bin: Optional[str] = None
     ):
         self.tsmuxer_bin = find_tsmuxer(tsmuxer_bin)
         self.mkvmerge_bin = find_mkvmerge(mkvmerge_bin)
+        self.subwoofa_bin = find_subwoofa(subwoofa_bin)
 
     def is_tsmuxer_available(self) -> bool:
         return shutil.which(self.tsmuxer_bin) is not None or Path(self.tsmuxer_bin).is_file()
 
     def is_mkvmerge_available(self) -> bool:
         return shutil.which(self.mkvmerge_bin) is not None or Path(self.mkvmerge_bin).is_file()
+
+    def is_subwoofa_available(self) -> bool:
+        return shutil.which(self.subwoofa_bin) is not None or Path(self.subwoofa_bin).is_file()
 
     def mux_3d_mkv(
         self,
@@ -291,6 +326,8 @@ class MuxerEngine:
         output_dir_or_iso: Path,
         audio_source_path: Optional[Path] = None,
         audio_streams: Optional[List[Dict[str, Any]]] = None,
+        subtitle_streams: Optional[List[Dict[str, Any]]] = None,
+        subtitle_paths: Optional[List[Path]] = None,
         fps: str = "23.976",
         is_iso: bool = True
     ) -> bool:
@@ -371,6 +408,31 @@ class MuxerEngine:
                         temp_audio_files.append(temp_file)
                         a_str = str(temp_file).replace("\\", "/")
                         meta_lines.append(f'A_EAC3, "{a_str}"{lang_param}')
+                    elif codec == "flac" and self.is_subwoofa_available():
+                        # Encode FLAC directly to DTS-HD Master Audio using Subwoofa
+                        temp_wav = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.wav"
+                        temp_dtshd = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.dtshd"
+                        sr = a_info.get("sample_rate")
+                        ar_args = ["-ar", "48000"] if (not sr or int(sr) not in (48000, 96000, 192000)) else []
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "pcm_s24le"] + ar_args + [str(temp_wav)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_wav)
+                        channels = a_info.get("channels", 2)
+                        layout = "5.1" if channels == 6 else ("7.1" if channels == 8 else ("stereo" if channels == 2 else "5.1"))
+                        sub_cmd = [
+                            self.subwoofa_bin, "encode",
+                            "--stream", "dtshd-ma",
+                            "--dest", "bluray-primary",
+                            "--layout", layout,
+                            "--auto-import", str(temp_wav),
+                            "-o", str(temp_dtshd)
+                        ]
+                        subprocess.run(sub_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                        temp_audio_files.append(temp_dtshd)
+                        a_str = str(temp_dtshd).replace("\\", "/")
+                        meta_lines.append(f'A_DTS, "{a_str}"{lang_param}')
                     elif codec in ("flac", "pcm_s16le", "pcm_s24le", "pcm_bluray", "pcm_s32le", "wav"):
                         temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.wav"
                         # Blu-ray LPCM standard strictly requires 48kHz, 96kHz, or 192kHz sample rates
@@ -396,6 +458,53 @@ class MuxerEngine:
                 except Exception as e:
                     print(f"[StereoForge] Warning: could not extract/transcode audio track {a_idx} ({codec}): {e}")
 
+        temp_sub_files: List[Path] = []
+        subs_to_process = subtitle_streams
+        if audio_source_path and audio_source_path.exists() and subs_to_process is None:
+            try:
+                from stereoforge.pipeline.ingest import IngestionEngine
+                subs_to_process = IngestionEngine().probe(audio_source_path).subtitle_streams
+            except Exception:
+                subs_to_process = []
+
+        if audio_source_path and audio_source_path.exists() and subs_to_process:
+            for s_info in subs_to_process:
+                s_idx = s_info.get("sub_index", 0)
+                codec = str(s_info.get("codec", "unknown")).lower()
+                lang = s_info.get("language", "und")
+                lang_param = f", lang={lang}" if lang and lang != "und" else ""
+
+                try:
+                    if codec in ("hdmv_pgs_subtitle", "pgs", "pgs_subtitle"):
+                        temp_sub = output_dir_or_iso.parent / f"temp_tsmuxer_sub_{s_idx}.sup"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:s:{s_idx}", "-c:s", "copy", str(temp_sub)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_sub_files.append(temp_sub)
+                        sub_str = str(temp_sub).replace("\\", "/")
+                        meta_lines.append(f'S_HDMV/PGS, "{sub_str}"{lang_param}, 3d-plane=0')
+                    elif codec in ("subrip", "srt", "ass", "mov_text", "webvtt"):
+                        temp_sub = output_dir_or_iso.parent / f"temp_tsmuxer_sub_{s_idx}.srt"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:s:{s_idx}", "-c:s", "srt", str(temp_sub)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_sub_files.append(temp_sub)
+                        sub_str = str(temp_sub).replace("\\", "/")
+                        meta_lines.append(f'S_TEXT/UTF8, "{sub_str}", font-name="Arial", font-size=60, font-color=0x00FFFFFF, bottom-offset=50{lang_param}')
+                except Exception as e:
+                    print(f"[StereoForge] Warning: could not extract subtitle track {s_idx} ({codec}): {e}")
+
+        if subtitle_paths:
+            for s_path in subtitle_paths:
+                if s_path.exists():
+                    sub_str = str(s_path).replace("\\", "/")
+                    if s_path.suffix.lower() == ".sup":
+                        meta_lines.append(f'S_HDMV/PGS, "{sub_str}", 3d-plane=0')
+                    elif s_path.suffix.lower() == ".srt":
+                        meta_lines.append(f'S_TEXT/UTF8, "{sub_str}", font-name="Arial", font-size=60, font-color=0x00FFFFFF, bottom-offset=50')
+
         meta_file = output_dir_or_iso.parent / "stereoforge_tsmuxer.meta"
         with open(meta_file, "w", encoding="utf-8") as f:
             f.write("\n".join(meta_lines) + "\n")
@@ -413,5 +522,8 @@ class MuxerEngine:
             if meta_file.exists():
                 meta_file.unlink()
             for tmp in temp_audio_files:
+                if tmp.exists():
+                    tmp.unlink()
+            for tmp in temp_sub_files:
                 if tmp.exists():
                     tmp.unlink()

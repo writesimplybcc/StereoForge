@@ -156,3 +156,101 @@ def test_tsmuxer_multi_track_meta_generation():
         assert "lang=spa" in meta
         assert "A_AC3" in meta  # Opus transcoded to standard 640k AC-3
         assert "lang=fre" in meta
+
+
+def test_subwoofa_dtshd_and_subtitle_meta():
+    muxer = MuxerEngine()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        base_video = tmp_path / "base.264"
+        dep_mvc = tmp_path / "dep.mvc"
+        out_iso = tmp_path / "output.iso"
+        base_video.write_bytes(b"\x00\x00\x00\x01\x67")
+        dep_mvc.write_bytes(b"\x00\x00\x00\x01\x20")
+
+        audio_streams = [
+            {"audio_index": 0, "codec": "flac", "channels": 6, "sample_rate": 48000, "language": "eng"}
+        ]
+        subtitle_streams = [
+            {"sub_index": 0, "codec": "hdmv_pgs_subtitle", "language": "eng"},
+            {"sub_index": 1, "codec": "subrip", "language": "spa"}
+        ]
+
+        saved_meta_content = []
+        def mock_subprocess_run(cmd, *args, **kwargs):
+            if any(str(a).endswith(".meta") for a in cmd):
+                meta_p = next(Path(a) for a in cmd if str(a).endswith(".meta"))
+                saved_meta_content.append(meta_p.read_text(encoding="utf-8"))
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=mock_subprocess_run):
+            with patch.object(muxer, "is_tsmuxer_available", return_value=True):
+                with patch.object(muxer, "is_subwoofa_available", return_value=True):
+                    success = muxer.mux_3d_bluray(
+                        base_video_path=base_video,
+                        dependent_mvc_path=dep_mvc,
+                        output_dir_or_iso=out_iso,
+                        audio_source_path=base_video,
+                        audio_streams=audio_streams,
+                        subtitle_streams=subtitle_streams,
+                        fps="23.976"
+                    )
+
+        assert success is True
+        assert len(saved_meta_content) == 1
+        meta = saved_meta_content[0]
+
+        # Verify Subwoofa DTS-HD MA output
+        assert "A_DTS" in meta
+        assert ".dtshd" in meta
+
+        # Verify PGS subtitle with 3D plane offset and SRT subtitle
+        assert "S_HDMV/PGS" in meta
+        assert "3d-plane=0" in meta
+        assert "S_TEXT/UTF8" in meta
+        assert "font-name=" in meta
+
+
+def test_hdr_and_deinterlace_filter_chains():
+    from stereoforge.pipeline.ingest import MediaProfile, StereoFormat, IngestionEngine
+
+    profile_hdr = MediaProfile(
+        path=Path("sample_hdr.mp4"),
+        width=3840,
+        height=1080,
+        fps=23.976,
+        fps_str="24000/1001",
+        duration=10.0,
+        codec="hevc",
+        pix_fmt="yuv420p10le",
+        is_10bit=True,
+        is_hdr=True,
+        is_interlaced=False,
+        stereo_format=StereoFormat.FULL_SBS,
+        audio_tracks=1,
+        subtitle_tracks=0
+    )
+    l_hdr, r_hdr = IngestionEngine.get_filter_chains(profile_hdr)
+    assert "tonemap=tonemap=mobius" in l_hdr
+    assert "zscale=p=bt709" in l_hdr
+
+    profile_interlaced = MediaProfile(
+        path=Path("sony_td10_home_video.mts"),
+        width=1920,
+        height=1080,
+        fps=29.97,
+        fps_str="30000/1001",
+        duration=10.0,
+        codec="h264",
+        pix_fmt="yuv420p",
+        is_10bit=False,
+        is_hdr=False,
+        is_interlaced=True,
+        stereo_format=StereoFormat.HALF_SBS,
+        audio_tracks=1,
+        subtitle_tracks=0
+    )
+    l_deint, r_deint = IngestionEngine.get_filter_chains(profile_interlaced)
+    assert "bwdif=" in l_deint
+    assert "crop=iw/2" in l_deint

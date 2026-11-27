@@ -172,6 +172,7 @@ class StereoForgePipeline:
                     output_dir_or_iso=job.output_file,
                     audio_source_path=job.input_file,
                     audio_streams=profile.audio_streams,
+                    subtitle_streams=profile.subtitle_streams,
                     fps=str(round(profile.fps, 3))
                 )
             else:

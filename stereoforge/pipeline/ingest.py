@@ -59,7 +59,9 @@ class MediaProfile:
     stereo_format: StereoFormat
     audio_tracks: int
     subtitle_tracks: int
+    is_interlaced: bool = False
     audio_streams: List[Dict[str, Any]] = field(default_factory=list)
+    subtitle_streams: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class IngestionEngine:
@@ -106,10 +108,17 @@ class IngestionEngine:
         width = int(video_stream.get("width", 1920))
         height = int(video_stream.get("height", 1080))
         pix_fmt = video_stream.get("pix_fmt", "yuv420p")
-        color_primaries = video_stream.get("color_primaries", "")
+        color_primaries = video_stream.get("color_primaries", "").lower()
+        color_transfer = video_stream.get("color_trc", "").lower()
 
         is_10bit = "10" in pix_fmt or "p010" in pix_fmt
-        is_hdr = is_10bit and ("bt2020" in color_primaries or "arib" in color_primaries)
+        is_hdr = is_10bit and (
+            "bt2020" in color_primaries or "arib" in color_primaries or
+            "smpte2084" in color_transfer or "arib-std-b67" in color_transfer
+        )
+
+        field_order = video_stream.get("field_order", "progressive").lower()
+        is_interlaced = field_order in ("tt", "bb", "tb", "bt") or video_stream.get("interlaced_frame", 0) == 1
 
         # Detect 3D Layout heuristic based on metadata tags, filename hints, and aspect ratio
         stereo_format = StereoFormat.UNKNOWN
@@ -176,6 +185,22 @@ class IngestionEngine:
                 "tags": tags
             })
 
+        sub_info_list = []
+        for i, s in enumerate(sub_streams):
+            tags = s.get("tags", {})
+            disposition = s.get("disposition", {})
+            codec = s.get("codec_name", "unknown").lower()
+            sub_info_list.append({
+                "stream_index": s.get("index"),
+                "sub_index": i,
+                "codec": codec,
+                "language": tags.get("language", "und"),
+                "title": tags.get("title", ""),
+                "is_forced": bool(disposition.get("forced", 0)),
+                "is_default": bool(disposition.get("default", 0)),
+                "tags": tags
+            })
+
         return MediaProfile(
             path=filepath,
             width=width,
@@ -187,10 +212,12 @@ class IngestionEngine:
             pix_fmt=pix_fmt,
             is_10bit=is_10bit,
             is_hdr=is_hdr,
+            is_interlaced=is_interlaced,
             stereo_format=stereo_format,
             audio_tracks=len(audio_streams),
             subtitle_tracks=len(sub_streams),
-            audio_streams=audio_info_list
+            audio_streams=audio_info_list,
+            subtitle_streams=sub_info_list
         )
 
     @staticmethod
@@ -207,27 +234,37 @@ class IngestionEngine:
         """
         fmt = profile.stereo_format
 
+        # Motion-adaptive deinterlacing for 60i/50i camcorders (Sony TD10/TD20/TD30, JVC, Panasonic)
+        deint = "bwdif=mode=0:parity=auto:deint=all," if profile.is_interlaced else ""
+
         if fmt == StereoFormat.FULL_SBS:
-            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"{deint}crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
         elif fmt == StereoFormat.HALF_SBS:
-            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"{deint}crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
         elif fmt == StereoFormat.FULL_TAB:
-            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"{deint}crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
         elif fmt == StereoFormat.HALF_TAB:
-            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
+            r_crop = f"{deint}crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
+        elif fmt == StereoFormat.MULTI_STREAM_AVI:
+            l_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
+            r_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
         else:
             # Passthrough or default 1:1
-            l_crop = f"scale={target_w}:{target_h},setsar=1"
-            r_crop = f"scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
+            r_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
 
         # HDR to SDR Tone Mapping if needed
         hdr_filter = ""
         if profile.is_hdr:
+            # High-fidelity Mobius / BT.709 tone mapping
             hdr_filter = ",zscale=t=linear:npl=100,tonemap=tonemap=mobius:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=limited,format=yuv420p"
+        elif profile.is_10bit:
+            # Dither 10-bit SDR down to standard 8-bit YUV420p for Blu-ray / MVC
+            hdr_filter = ",format=yuv420p"
 
         left_chain = l_crop + hdr_filter
         right_chain = r_crop + hdr_filter
@@ -253,22 +290,30 @@ class IngestionEngine:
             self.ffmpeg_bin, "-y",
             "-ss", str(round(timestamp_sec, 2)),
             "-i", str(profile.path),
+        ]
+        if profile.stereo_format == StereoFormat.MULTI_STREAM_AVI:
+            cmd_l.extend(["-map", "0:v:1" if swap_eyes else "0:v:0"])
+        cmd_l.extend([
             "-vf", l_chain,
             "-vframes", "1",
             "-pix_fmt", "rgb24",
             "-f", "rawvideo", "-"
-        ]
+        ])
 
         r_input = right_file if (right_file and right_file.exists()) else profile.path
         cmd_r = [
             self.ffmpeg_bin, "-y",
             "-ss", str(round(timestamp_sec, 2)),
             "-i", str(r_input),
+        ]
+        if profile.stereo_format == StereoFormat.MULTI_STREAM_AVI:
+            cmd_r.extend(["-map", "0:v:0" if swap_eyes else "0:v:1"])
+        cmd_r.extend([
             "-vf", r_chain,
             "-vframes", "1",
             "-pix_fmt", "rgb24",
             "-f", "rawvideo", "-"
-        ]
+        ])
 
         expected_bytes = target_w * target_h * 3
         try:

@@ -23,7 +23,9 @@ __pycache__/
 
 # C/C++ CMake build artifacts & portable tools
 build/
-tools/
+dist/
+tools/*
+!tools/download_tools.py
 *.zip
 *.obj
 *.lib

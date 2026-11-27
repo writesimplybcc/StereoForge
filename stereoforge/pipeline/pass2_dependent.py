@@ -72,9 +72,13 @@ class DependentViewEncoder:
             self.ffmpeg_bin,
             "-y",
             "-i", str(input_media),
+        ]
+        if profile.stereo_format == StereoFormat.MULTI_STREAM_AVI:
+            cmd.extend(["-map", "0:v:0" if swap_eyes else "0:v:1"])
+        cmd.extend([
             "-vf", right_filter,
             "-pix_fmt", "yuv420p",
-        ]
+        ])
         cmd.extend(get_h264_encoder_options(self.encoder, bitrate_kbps, strict_bluray=strict_bluray))
         cmd.extend([
             "-an",
@@ -134,9 +138,13 @@ class DependentViewEncoder:
         cmd_r = [
             self.ffmpeg_bin, "-y",
             "-i", str(input_media),
+        ]
+        if profile.stereo_format == StereoFormat.MULTI_STREAM_AVI:
+            cmd_r.extend(["-map", "0:v:0" if swap_eyes else "0:v:1"])
+        cmd_r.extend([
             "-vf", right_filter,
             "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"
-        ]
+        ])
 
         proc_l = subprocess.Popen(cmd_l, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         proc_r = subprocess.Popen(cmd_r, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)

@@ -25,7 +25,7 @@ from stereoforge import __version__
 from stereoforge.pipeline.orchestrator import StereoForgePipeline, EncodeJob, BatchProgress, JobResult
 from stereoforge.pipeline.ingest import IngestionEngine, StereoFormat, find_matching_eye_file
 from stereoforge.pipeline.pass1_base import detect_best_h264_encoder
-from stereoforge.pipeline.muxer import find_tsmuxer
+from stereoforge.pipeline.muxer import find_tsmuxer, find_subwoofa
 from stereoforge.cli import scan_batch_jobs
 from stereoforge_core.python.native_bridge import NativeMVCEngine
 from stereoforge.ui.preview import AnaglyphPreviewDialog
@@ -302,9 +302,16 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         self.ts_status_lbl = QLabel(ts_badge)
         self.ts_status_lbl.setStyleSheet("background: rgba(168, 85, 247, 0.15); color: #9333EA; font-weight: bold; font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.3);")
 
+        subwoofa_bin = find_subwoofa()
+        sub_ok = shutil.which(subwoofa_bin) is not None or Path(subwoofa_bin).is_file()
+        sub_badge = "🔊 subwoofa: Ready (DTS-HD MA)" if sub_ok else "🔊 subwoofa: Optional (LPCM)"
+        self.sub_status_lbl = QLabel(sub_badge)
+        self.sub_status_lbl.setStyleSheet("background: rgba(234, 179, 8, 0.15); color: #CA8A04; font-weight: bold; font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(234, 179, 8, 0.3);")
+
         engine_bar.addWidget(self.gpu_status_lbl)
         engine_bar.addWidget(self.c_status_lbl)
         engine_bar.addWidget(self.ts_status_lbl)
+        engine_bar.addWidget(self.sub_status_lbl)
         engine_bar.addStretch()
 
         root_layout.addLayout(engine_bar)

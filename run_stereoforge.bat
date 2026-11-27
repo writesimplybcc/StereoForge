@@ -42,7 +42,8 @@ if exist "%~dp0tools\MKVToolNix" set "PATH=%PATH%;%~dp0tools\MKVToolNix"
 if exist "%~dp0tools" set "PATH=%PATH%;%~dp0tools"
 if exist "%~dp0bin" set "PATH=%PATH%;%~dp0bin"
 
-:: 3. Auto-detect tsMuxeR
+:: 3. Auto-detect tsMuxeR and subwoofa
+if exist "%~dp0tools" set "PATH=%PATH%;%~dp0tools"
 if exist "%~dp0tools\tsMuxeR" set "PATH=%PATH%;%~dp0tools\tsMuxeR"
 if exist "C:\Program Files\tsMuxeR" set "PATH=%PATH%;C:\Program Files\tsMuxeR"
 if exist "C:\Program Files (x86)\tsMuxeR" set "PATH=%PATH%;C:\Program Files (x86)\tsMuxeR"
@@ -50,6 +51,7 @@ if exist "C:\tsMuxeR" set "PATH=%PATH%;C:\tsMuxeR"
 if exist "D:\tsMuxeR" set "PATH=%PATH%;D:\tsMuxeR"
 if exist "F:\TSMuxer" set "PATH=%PATH%;F:\TSMuxer"
 if exist "%LOCALAPPDATA%\Programs\tsMuxeR" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\tsMuxeR"
+if exist "%LOCALAPPDATA%\Subwoofa" set "PATH=%PATH%;%LOCALAPPDATA%\Subwoofa"
 
 :: 4. Auto-detect FFmpeg
 if exist "C:\ffmpeg\bin" set "PATH=%PATH%;C:\ffmpeg\bin"

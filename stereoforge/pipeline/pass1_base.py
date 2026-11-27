@@ -137,9 +137,13 @@ class BaseViewEncoder:
             self.ffmpeg_bin,
             "-y",
             "-i", str(profile.path),
+        ]
+        if profile.stereo_format == StereoFormat.MULTI_STREAM_AVI:
+            cmd.extend(["-map", "0:v:1" if swap_eyes else "0:v:0"])
+        cmd.extend([
             "-vf", left_filter,
             "-pix_fmt", "yuv420p",
-        ]
+        ])
         cmd.extend(get_h264_encoder_options(self.encoder, bitrate_kbps, strict_bluray=strict_bluray))
         cmd.extend([
             "-an",  # Strip audio (audio is copied separately during muxing)
