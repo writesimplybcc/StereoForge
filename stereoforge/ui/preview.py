@@ -31,21 +31,29 @@ def get_anaglyph_filter_config(
     is_dual: bool = False
 ) -> Tuple[str, bool]:
     """Generates the appropriate FFmpeg stereo3d filter string."""
+    actual_mode = mode
+    effective_swap = swap_eyes
+
+    # Magenta/Green Trioscopic: invert inputs into Green/Magenta filter
+    if mode == "mgmd":
+        actual_mode = "agmd"
+        effective_swap = not swap_eyes
+
     if is_dual:
-        if swap_eyes:
-            filter_str = f"[1:v]scale=960:1080[l];[0:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{mode},scale=960:540"
+        if effective_swap:
+            filter_str = f"[1:v]scale=960:1080[l];[0:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{actual_mode},scale=960:540"
         else:
-            filter_str = f"[0:v]scale=960:1080[l];[1:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{mode},scale=960:540"
+            filter_str = f"[0:v]scale=960:1080[l];[1:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{actual_mode},scale=960:540"
         return filter_str, True
 
     if format_type in (StereoFormat.FULL_SBS, StereoFormat.HALF_SBS):
-        in_code = "sbs2r" if swap_eyes else "sbs2l"
+        in_code = "sbs2r" if effective_swap else "sbs2l"
     elif format_type in (StereoFormat.FULL_TAB, StereoFormat.HALF_TAB):
-        in_code = "ab2r" if swap_eyes else "ab2l"
+        in_code = "ab2r" if effective_swap else "ab2l"
     else:
-        in_code = "sbs2r" if swap_eyes else "sbs2l"
+        in_code = "sbs2r" if effective_swap else "sbs2l"
 
-    filter_str = f"stereo3d={in_code}:{mode},scale=960:540"
+    filter_str = f"stereo3d={in_code}:{actual_mode},scale=960:540"
     return filter_str, False
 
 
@@ -300,12 +308,18 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
 
         ctrl_layout.addWidget(QLabel("Preview Mode:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([
-            "🔴🔵 Red / Cyan (Dubois Color Anaglyph)",
-            "🟢🟣 Green / Magenta (Trioscopic)",
-            "👁️ Left Eye Only (2D Base)",
-            "👁️ Right Eye Only (2D Dependent)"
-        ])
+        self.preview_modes = [
+            ("🔴🔵 Red / Cyan (Dubois Color - Recommended)", "arcd"),
+            ("🔴🔵 Red / Cyan (Standard Full Color)", "arcc"),
+            ("🔴🔵 Red / Cyan (Half Color)", "arch"),
+            ("🟢🟣 Green / Magenta (Trioscopic: Green Left / Magenta Right)", "agmd"),
+            ("🟣🟢 Magenta / Green (Trioscopic: Magenta Left / Green Right)", "mgmd"),
+            ("🟡🔵 Amber / Blue (ColorCode 3D)", "aybd"),
+            ("👁️ Left Eye Only (2D Base)", "ml"),
+            ("👁️ Right Eye Only (2D Dependent)", "mr")
+        ]
+        for label, _ in self.preview_modes:
+            self.mode_combo.addItem(label)
         self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
         ctrl_layout.addWidget(self.mode_combo, stretch=1)
 
@@ -332,9 +346,10 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         g_icon = QLabel("💡")
         g_icon.setFont(QFont("Segoe UI", 14))
         g_text = QLabel(
-            "<b>How to verify 3D Orientation:</b> Put on standard Red/Cyan glasses (Red on Left Eye). "
-            "Foreground objects should appear naturally closer with pop-out depth. "
-            "If objects feel inverted, sink inward, or cause eye strain, click <b>'🔄 Swap Left/Right Eyes'</b>."
+            "<b>How to verify 3D Orientation:</b> Put on your 3D glasses (e.g. Red on Left Eye for Red/Cyan). "
+            "Foreground elements should naturally pop out with depth. "
+            "If objects feel inverted or sink inward, click <b>'🔄 Swap Left/Right Eyes'</b>.<br/>"
+            "<i>Note on Trioscopic:</i> Standard Trioscopic uses Green on Left / Magenta on Right. If your glasses have Magenta on the Left, select <b>'Magenta / Green'</b> or click <b>Swap</b>."
         )
         g_text.setWordWrap(True)
         g_text.setStyleSheet("font-size: 11px; color: #CBD5E1;")
@@ -407,8 +422,10 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         self.request_frame()
 
     def on_mode_changed(self, idx: int):
-        modes = ["arcd", "agmd", "ml", "mr"]
-        self.current_mode = modes[idx] if idx < len(modes) else "arcd"
+        if 0 <= idx < len(self.preview_modes):
+            self.current_mode = self.preview_modes[idx][1]
+        else:
+            self.current_mode = "arcd"
         self.request_frame()
 
     def toggle_swap_eyes(self):

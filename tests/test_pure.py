@@ -187,6 +187,22 @@ def test_anaglyph_filter_generation():
     assert is_c2
     assert "hstack" in f_dual
 
+    # Test standard Red/Cyan full color (arcc)
+    f_arcc, _ = get_anaglyph_filter_config(StereoFormat.HALF_SBS, swap_eyes=False, mode="arcc")
+    assert "stereo3d=sbs2l:arcc" in f_arcc
+
+    # Test Trioscopic Green/Magenta (agmd)
+    f_agmd, _ = get_anaglyph_filter_config(StereoFormat.HALF_SBS, swap_eyes=False, mode="agmd")
+    assert "stereo3d=sbs2l:agmd" in f_agmd
+
+    # Test Trioscopic Magenta/Green (mgmd) which inverts inputs into agmd
+    f_mgmd, _ = get_anaglyph_filter_config(StereoFormat.HALF_SBS, swap_eyes=False, mode="mgmd")
+    assert "stereo3d=sbs2r:agmd" in f_mgmd
+
+    # Test Amber/Blue (aybd)
+    f_aybd, _ = get_anaglyph_filter_config(StereoFormat.HALF_SBS, swap_eyes=False, mode="aybd")
+    assert "stereo3d=sbs2l:aybd" in f_aybd
+
 
 if __name__ == "__main__":
     test_frame_manifest_serialization()
