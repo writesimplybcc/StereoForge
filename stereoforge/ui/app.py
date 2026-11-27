@@ -445,7 +445,7 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             QMainWindow {{ background-color: {theme['bg']}; }}
             QWidget {{ background-color: {theme['bg']}; color: {theme['text']}; }}
             QScrollArea {{ background-color: transparent; border: none; }}
-            QScrollArea > QWidget > QWidget {{ background-color: transparent; }}
+            QScrollArea QWidget {{ background-color: transparent; }}
             QGroupBox {{
                 background-color: {theme['card_bg']};
                 color: {theme['header_color']};
@@ -471,10 +471,6 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             }}
             QPushButton:hover {{
                 background-color: {theme['border']};
-            }}
-            QPushButton#{self.start_btn.objectName()} {{
-                background-color: {theme['accent']};
-                color: {theme['btn_text']};
             }}
             QLineEdit {{
                 background-color: {theme['input_bg']};
