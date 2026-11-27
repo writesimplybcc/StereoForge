@@ -11,9 +11,9 @@ echo.
 
 :: 1. Locate Python
 set "PYTHON=python"
-where %PYTHON% >nul 2>&1
+python --version >nul 2>&1
 if errorlevel 1 (
-    where py >nul 2>&1
+    py -3 --version >nul 2>&1
     if not errorlevel 1 (
         set "PYTHON=py -3"
     ) else (
@@ -23,8 +23,8 @@ if errorlevel 1 (
     )
 )
 
-where %PYTHON% >nul 2>&1
-if errorlevel 1 if not exist "%PYTHON%" (
+%PYTHON% --version >nul 2>&1
+if errorlevel 1 (
     echo [ERROR] Python 3.10+ was not found on your system.
     echo Please install Python from https://www.python.org/ or run:
     echo   winget install Python.Python.3.12
@@ -34,7 +34,7 @@ if errorlevel 1 if not exist "%PYTHON%" (
     exit /b 1
 )
 
-:: 2. Auto-detect MKVToolNix (mkvmerge)
+:: 2. Auto-detect MKVToolNix
 if exist "C:\Program Files\MKVToolNix" set "PATH=%PATH%;C:\Program Files\MKVToolNix"
 if exist "C:\Program Files (x86)\MKVToolNix" set "PATH=%PATH%;C:\Program Files (x86)\MKVToolNix"
 if exist "%LOCALAPPDATA%\Programs\MKVToolNix" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\MKVToolNix"
@@ -68,8 +68,8 @@ if errorlevel 1 (
 
 where mkvmerge >nul 2>&1
 if errorlevel 1 (
-    echo [NOTE] MKVToolNix (mkvmerge) was not detected.
-    echo   Needed for 3D MVC Matroska (.mkv) packaging. Install via:
+    echo [NOTE] MKVToolNix - mkvmerge was not detected.
+    echo   Needed for 3D MVC Matroska .mkv packaging. Install via:
     echo     winget install MKVToolNix.MKVToolNix
     echo.
 )
