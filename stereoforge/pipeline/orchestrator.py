@@ -31,6 +31,8 @@ class EncodeJob:
     swap_eyes: bool = False
     title: Optional[str] = None
     layout_override: Optional[StereoFormat] = None
+    auto_detect_inverted_eyes: bool = False
+    engine_mode: str = "gpu_turbo"  # "gpu_turbo" or "native_mvc"
 
 
 class StereoForgePipeline:
@@ -60,6 +62,35 @@ class StereoForgePipeline:
         if job.layout_override and job.layout_override != StereoFormat.UNKNOWN:
             profile.stereo_format = job.layout_override
             report(f"Using 3D layout override: {job.layout_override.value}", 0.06)
+
+        if job.auto_detect_inverted_eyes:
+            report("Analyzing stereoscopic orientation across video...", 0.065)
+            dur = profile.duration if profile.duration > 0 else 60.0
+            test_points = [dur * 0.25, dur * 0.50, dur * 0.75]
+            inverted_votes = 0
+            valid_samples = 0
+            for tp in test_points:
+                l_img, r_img = self.ingest.extract_stereo_pair(
+                    profile=profile,
+                    timestamp_sec=tp,
+                    target_w=640,
+                    target_h=360,
+                    swap_eyes=job.swap_eyes,
+                    right_file=job.right_file
+                )
+                if l_img is not None and r_img is not None:
+                    from stereoforge.core.disparity import detect_inverted_eyes
+                    res = detect_inverted_eyes(l_img, r_img)
+                    if res.get("confidence", 0.0) >= 0.5:
+                        valid_samples += 1
+                        if res.get("is_inverted", False):
+                            inverted_votes += 1
+
+            if valid_samples > 0 and inverted_votes > (valid_samples / 2):
+                report(f"⚠️ Pseudoscopic (inverted eyes) detected ({inverted_votes}/{valid_samples} samples)! Auto-correcting Left/Right channels.", 0.07)
+                job.swap_eyes = not job.swap_eyes
+            else:
+                report("Stereoscopic eye orientation verified: Standard Left/Right.", 0.07)
 
         # Allocate bitrates
         total_kbps = job.target_bitrate_mbps * 1000
@@ -92,8 +123,9 @@ class StereoForgePipeline:
                 swap_eyes=job.swap_eyes
             )
 
-            # Stage 2: Pass 2 Dependent View (GPU)
-            report(f"Pass 2: Encoding Right Eye ({dep_kbps} kbps on {self.dep_encoder.encoder})...", 0.50)
+            # Stage 2: Pass 2 Dependent View
+            enc_desc = "native stereoforge-core" if job.engine_mode == "native_mvc" else self.dep_encoder.encoder
+            report(f"Pass 2: Encoding Right Eye ({dep_kbps} kbps on {enc_desc})...", 0.50)
             success = self.dep_encoder.encode(
                 profile=profile,
                 base_bitstream_path=base_264,
@@ -103,7 +135,8 @@ class StereoForgePipeline:
                 bitrate_kbps=dep_kbps,
                 strict_bluray=job.strict_bluray,
                 swap_eyes=job.swap_eyes,
-                right_file=job.right_file
+                right_file=job.right_file,
+                use_native_mvc=(job.engine_mode == "native_mvc")
             )
 
             if not success:

@@ -217,3 +217,49 @@ class IngestionEngine:
         if swap_eyes:
             return right_chain, left_chain
         return left_chain, right_chain
+
+    def extract_stereo_pair(
+        self,
+        profile: MediaProfile,
+        timestamp_sec: float = 10.0,
+        target_w: int = 640,
+        target_h: int = 360,
+        swap_eyes: bool = False,
+        right_file: Optional[Path] = None
+    ) -> Tuple[Optional[Any], Optional[Any]]:
+        """Extracts a synchronized pair of Left and Right RGB images as NumPy arrays."""
+        import numpy as np
+        l_chain, r_chain = self.get_filter_chains(profile, target_w=target_w, target_h=target_h, swap_eyes=swap_eyes)
+
+        cmd_l = [
+            self.ffmpeg_bin, "-y",
+            "-ss", str(round(timestamp_sec, 2)),
+            "-i", str(profile.path),
+            "-vf", l_chain,
+            "-vframes", "1",
+            "-pix_fmt", "rgb24",
+            "-f", "rawvideo", "-"
+        ]
+
+        r_input = right_file if (right_file and right_file.exists()) else profile.path
+        cmd_r = [
+            self.ffmpeg_bin, "-y",
+            "-ss", str(round(timestamp_sec, 2)),
+            "-i", str(r_input),
+            "-vf", r_chain,
+            "-vframes", "1",
+            "-pix_fmt", "rgb24",
+            "-f", "rawvideo", "-"
+        ]
+
+        expected_bytes = target_w * target_h * 3
+        try:
+            res_l = subprocess.run(cmd_l, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
+            res_r = subprocess.run(cmd_r, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
+            if len(res_l.stdout) >= expected_bytes and len(res_r.stdout) >= expected_bytes:
+                l_img = np.frombuffer(res_l.stdout[:expected_bytes], dtype=np.uint8).reshape((target_h, target_w, 3))
+                r_img = np.frombuffer(res_r.stdout[:expected_bytes], dtype=np.uint8).reshape((target_h, target_w, 3))
+                return l_img, r_img
+        except Exception:
+            pass
+        return None, None

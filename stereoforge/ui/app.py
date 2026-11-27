@@ -351,10 +351,24 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         self.bitrate_slider.valueChanged.connect(self.on_bitrate_changed)
         set_layout.addWidget(self.bitrate_slider)
 
+        engine_row = QHBoxLayout()
+        engine_row.addWidget(QLabel("Engine Mode:"))
+        self.engine_mode_combo = QComboBox()
+        self.engine_mode_combo.addItems([
+            "🚀 GPU Hardware Turbo (Fastest, 60–100+ FPS)",
+            "🔬 Native C stereoforge-core (True MVC Inter-View Space-Saver)"
+        ])
+        engine_row.addWidget(self.engine_mode_combo, stretch=1)
+        set_layout.addLayout(engine_row)
+
         opts_row = QHBoxLayout()
-        self.swap_eyes_cb = QCheckBox("Swap Left/Right Eyes")
+        self.auto_fix_inverted_cb = QCheckBox("Auto-Fix Inverted Eyes")
+        self.auto_fix_inverted_cb.setChecked(True)
+        self.auto_fix_inverted_cb.setToolTip("Automatically tests stereoscopic convergence and flips reversed channels")
+        self.swap_eyes_cb = QCheckBox("Force Swap Eyes")
         self.bluray_cap_cb = QCheckBox("Strict Blu-ray VBV Cap (Max 40 Mbps)")
         self.bluray_cap_cb.setChecked(False)
+        opts_row.addWidget(self.auto_fix_inverted_cb)
         opts_row.addWidget(self.swap_eyes_cb)
         opts_row.addWidget(self.bluray_cap_cb)
         opts_row.addStretch()
@@ -792,6 +806,8 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         custom_title = self.title_edit.text().strip() or None
 
+        selected_engine = "native_mvc" if self.engine_mode_combo.currentIndex() == 1 else "gpu_turbo"
+
         job = EncodeJob(
             input_file=self.input_file,
             right_file=right_input,
@@ -800,7 +816,9 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             strict_bluray=self.bluray_cap_cb.isChecked(),
             swap_eyes=self.swap_eyes_cb.isChecked(),
             title=custom_title,
-            layout_override=layout_override
+            layout_override=layout_override,
+            auto_detect_inverted_eyes=self.auto_fix_inverted_cb.isChecked(),
+            engine_mode=selected_engine
         )
 
         self.start_btn.setEnabled(False)

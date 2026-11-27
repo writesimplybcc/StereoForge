@@ -39,9 +39,27 @@ class DependentViewEncoder:
         strict_bluray: bool = True,
         swap_eyes: bool = False,
         right_file: Optional[Path] = None,
-        progress_cb: Optional[Callable[[int, int], None]] = None
+        progress_cb: Optional[Callable[[int, int], None]] = None,
+        use_native_mvc: bool = False
     ) -> bool:
         """Encodes the Dependent View (Right Eye) slaved to the manifest."""
+        if use_native_mvc and output_dependent_mvc:
+            print("[StereoForge] Running Native C stereoforge-core (True MVC Inter-View Reference Injection)...")
+            ok = self._encode_native_mvc(
+                profile=profile,
+                base_bitstream_path=base_bitstream_path,
+                manifest=manifest,
+                output_dependent_mvc=output_dependent_mvc,
+                bitrate_kbps=bitrate_kbps,
+                strict_bluray=strict_bluray,
+                swap_eyes=swap_eyes,
+                right_file=right_file,
+                progress_cb=progress_cb
+            )
+            if ok:
+                return True
+            print("[StereoForge] Falling back to GPU turbo encoding...")
+
         input_media = right_file if (right_file and right_file.exists()) else profile.path
         _, right_filter = IngestionEngine.get_filter_chains(profile, swap_eyes=swap_eyes)
 
@@ -76,6 +94,94 @@ class DependentViewEncoder:
             return self._wrap_mvc_stream(output_dependent_264, output_dependent_mvc, manifest)
 
         return True
+
+    def _encode_native_mvc(
+        self,
+        profile: MediaProfile,
+        base_bitstream_path: Path,
+        manifest: FrameManifest,
+        output_dependent_mvc: Path,
+        bitrate_kbps: int,
+        strict_bluray: bool = True,
+        swap_eyes: bool = False,
+        right_file: Optional[Path] = None,
+        progress_cb: Optional[Callable[[int, int], None]] = None
+    ) -> bool:
+        """Encodes Dependent View directly via native C stereoforge-core engine."""
+        try:
+            from stereoforge_core.python.native_bridge import NativeMVCEngine
+            if not NativeMVCEngine.is_available():
+                return False
+        except Exception:
+            return False
+
+        w, h = 1920, 1080
+        fps_num = int(profile.fps * 1000)
+        fps_den = 1000
+        native = NativeMVCEngine(width=w, height=h, bitrate_kbps=bitrate_kbps, fps_num=fps_num, fps_den=fps_den, strict_bluray=strict_bluray)
+        sps = native.get_subset_sps()
+
+        input_media = right_file if (right_file and right_file.exists()) else profile.path
+        _, right_filter = IngestionEngine.get_filter_chains(profile, target_w=w, target_h=h, swap_eyes=swap_eyes)
+
+        # Pipe 1: Reconstructed Left Eye decoded from base_bitstream_path
+        cmd_l = [
+            self.ffmpeg_bin, "-y",
+            "-i", str(base_bitstream_path),
+            "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"
+        ]
+        # Pipe 2: Right Eye raw video
+        cmd_r = [
+            self.ffmpeg_bin, "-y",
+            "-i", str(input_media),
+            "-vf", right_filter,
+            "-pix_fmt", "yuv420p", "-f", "rawvideo", "-"
+        ]
+
+        proc_l = subprocess.Popen(cmd_l, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc_r = subprocess.Popen(cmd_r, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+        frame_sz = w * h * 3 // 2
+        luma_sz = w * h
+        total_frames = len(manifest.frames)
+
+        try:
+            with open(output_dependent_mvc, "wb") as fout:
+                fout.write(sps)
+                f_idx = 0
+                while True:
+                    raw_l = proc_l.stdout.read(frame_sz)
+                    raw_r = proc_r.stdout.read(frame_sz)
+                    if len(raw_l) < frame_sz or len(raw_r) < frame_sz:
+                        break
+
+                    is_key = (f_idx % 24 == 0)
+                    if f_idx < total_frames:
+                        is_key = manifest.frames[f_idx].is_keyframe
+
+                    if is_key and f_idx > 0:
+                        fout.write(sps)
+
+                    nal20 = native.encode_dependent_frame(
+                        right_y=raw_r[:luma_sz],
+                        left_y=raw_l[:luma_sz],
+                        is_keyframe=is_key,
+                        pts=f_idx * 1001,
+                        dts=f_idx * 1001
+                    )
+                    fout.write(nal20)
+                    f_idx += 1
+                    if progress_cb and total_frames > 0 and (f_idx % 10 == 0 or f_idx == total_frames):
+                        progress_cb(f_idx, total_frames)
+
+            return True
+        except Exception as e:
+            print(f"[StereoForge] Native MVC encode error: {e}")
+            return False
+        finally:
+            proc_l.kill()
+            proc_r.kill()
+            native.close()
 
     def _wrap_mvc_stream(
         self,
