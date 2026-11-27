@@ -2,21 +2,21 @@
 
 Enables instant Red/Cyan stereoscopic preview and real-time Left/Right
 eye orientation verification to prevent inverted (pseudoscopic) 3D output.
+Includes bidirectional timeline scrubbing and direct seek capabilities.
 """
 
 from pathlib import Path
 from typing import Optional, Tuple
 import subprocess
 import shutil
-import tempfile
 
 try:
     from PySide6.QtWidgets import (
         QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QSlider, QComboBox, QGroupBox, QFrame, QSizePolicy
     )
-    from PySide6.QtCore import Qt, QThread, Signal
-    from PySide6.QtGui import QPixmap, QImage, QFont
+    from PySide6.QtCore import Qt, QThread, Signal, QTimer
+    from PySide6.QtGui import QPixmap, QFont
     HAS_PYSIDE6 = True
 except ImportError:
     HAS_PYSIDE6 = False
@@ -30,63 +30,75 @@ def get_anaglyph_filter_config(
     mode: str = "arcd",
     is_dual: bool = False
 ) -> Tuple[str, bool]:
-    """Generates the appropriate FFmpeg stereo3d filter string.
-
-    Modes:
-      arcd: Red/Cyan Dubois (color anaglyph)
-      agmd: Green/Magenta Dubois
-      ml: Mono Left eye
-      mr: Mono Right eye
-
-    Returns:
-      (filter_str, is_complex)
-    """
+    """Generates the appropriate FFmpeg stereo3d filter string."""
     if is_dual:
-        # Dual separate Left/Right files
         if swap_eyes:
             filter_str = f"[1:v]scale=960:1080[l];[0:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{mode},scale=960:540"
         else:
             filter_str = f"[0:v]scale=960:1080[l];[1:v]scale=960:1080[r];[l][r]hstack,stereo3d=sbs2l:{mode},scale=960:540"
         return filter_str, True
 
-    # Single-file layouts (SBS, TAB)
     if format_type in (StereoFormat.FULL_SBS, StereoFormat.HALF_SBS):
         in_code = "sbs2r" if swap_eyes else "sbs2l"
     elif format_type in (StereoFormat.FULL_TAB, StereoFormat.HALF_TAB):
         in_code = "ab2r" if swap_eyes else "ab2l"
     else:
-        # Default fallback to Half-SBS
         in_code = "sbs2r" if swap_eyes else "sbs2l"
 
     filter_str = f"stereo3d={in_code}:{mode},scale=960:540"
     return filter_str, False
 
 
+class ClickableSlider(QSlider if HAS_PYSIDE6 else object):
+    """Enhanced QSlider that jumps immediately to any clicked position."""
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self.orientation() == Qt.Horizontal:
+                val = self.minimum() + ((self.maximum() - self.minimum()) * event.position().x()) / max(1, self.width())
+            else:
+                val = self.minimum() + ((self.maximum() - self.minimum()) * (self.height() - event.position().y())) / max(1, self.height())
+            clamped = max(self.minimum(), min(self.maximum(), int(round(val))))
+            self.setValue(clamped)
+            event.accept()
+        super().mousePressEvent(event)
+
+
 class FrameExtractorWorker(QThread if HAS_PYSIDE6 else object):
-    """Background thread to extract anaglyph preview frames smoothly without GUI lag."""
+    """Background thread that extracts anaglyph preview frames directly into memory."""
     if HAS_PYSIDE6:
-        frame_ready = Signal(str)
-        error_signal = Signal(str)
+        frame_ready = Signal(int, bytes)
+        error_signal = Signal(int, str)
 
     def __init__(
         self,
+        request_id: int,
         input_file: Path,
         right_file: Optional[Path],
         format_type: StereoFormat,
         timestamp: float,
         swap_eyes: bool,
-        mode: str,
-        output_temp_jpg: Path
+        mode: str
     ):
         if HAS_PYSIDE6:
             super().__init__()
+        self.request_id = request_id
         self.input_file = input_file
         self.right_file = right_file
         self.format_type = format_type
         self.timestamp = timestamp
         self.swap_eyes = swap_eyes
         self.mode = mode
-        self.output_temp_jpg = output_temp_jpg
+        self.process: Optional[subprocess.Popen] = None
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+        if self.process:
+            try:
+                self.process.kill()
+            except Exception:
+                pass
 
     def run(self):
         is_dual = bool(self.right_file and self.right_file.exists())
@@ -114,23 +126,29 @@ class FrameExtractorWorker(QThread if HAS_PYSIDE6 else object):
 
         cmd.extend([
             "-vframes", "1",
-            str(self.output_temp_jpg)
+            "-f", "image2pipe",
+            "-vcodec", "mjpeg",
+            "-"
         ])
 
         try:
-            res = subprocess.run(
+            self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True
+                stderr=subprocess.PIPE
             )
-            if self.output_temp_jpg.exists():
-                self.frame_ready.emit(str(self.output_temp_jpg))
+            out, err = self.process.communicate()
+            if self._is_cancelled:
+                return
+
+            if self.process.returncode == 0 and len(out) > 1000:
+                self.frame_ready.emit(self.request_id, out)
             else:
-                self.error_signal.emit("Frame extraction produced no image.")
+                err_text = err.decode("utf-8", errors="ignore")
+                self.error_signal.emit(self.request_id, f"Extraction error: {err_text[:200]}")
         except Exception as e:
-            self.error_signal.emit(str(e))
+            if not self._is_cancelled:
+                self.error_signal.emit(self.request_id, str(e))
 
 
 class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
@@ -156,14 +174,20 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         self.duration = max(1.0, duration)
         self.current_time = min(5.0, self.duration * 0.15)
         self.current_mode = "arcd"
-        self.worker: Optional[FrameExtractorWorker] = None
 
-        self.temp_dir = Path(tempfile.mkdtemp(prefix="stereoforge_preview_"))
-        self.temp_frame_path = self.temp_dir / "preview_frame.jpg"
+        self.request_id = 0
+        self._active_workers = []
+        self.current_pixmap: Optional[QPixmap] = None
+
+        # Debounce timer to avoid spamming ffmpeg during rapid scrubbing
+        self.debounce_timer = QTimer(self)
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(120)
+        self.debounce_timer.timeout.connect(self.request_frame)
 
         self.setWindowTitle("StereoForge 3D Anaglyph Preview & Orientation Checker")
-        self.resize(1000, 760)
-        self.setMinimumSize(850, 600)
+        self.resize(1020, 780)
+        self.setMinimumSize(880, 620)
 
         self.init_ui()
         self.request_frame()
@@ -210,37 +234,63 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         """)
         layout.addWidget(self.image_label, stretch=1)
 
-        # Timeline Scrub Bar
-        scrub_group = QGroupBox("⏱️ Timeline Position")
+        # Timeline Scrub Bar (Bidirectional & Clickable)
+        scrub_group = QGroupBox("⏱️ Timeline Scrub & Seek (Bidirectional)")
         scrub_layout = QVBoxLayout(scrub_group)
-        scrub_layout.setSpacing(6)
+        scrub_layout.setSpacing(8)
 
         slider_row = QHBoxLayout()
-        self.time_label = QLabel(f"00:05 / {self.format_time(self.duration)}")
+        self.time_label = QLabel(f"{self.format_time(self.current_time)} / {self.format_time(self.duration)}")
         self.time_label.setFont(QFont("Consolas", 10, QFont.Bold))
-        self.time_label.setFixedWidth(120)
+        self.time_label.setFixedWidth(130)
 
-        self.time_slider = QSlider(Qt.Horizontal)
+        # Use ClickableSlider for instant click-to-position jumps anywhere on the bar
+        self.time_slider = ClickableSlider(Qt.Horizontal)
         self.time_slider.setRange(0, 1000)
         init_pct = int((self.current_time / self.duration) * 1000)
         self.time_slider.setValue(init_pct)
-        self.time_slider.sliderMoved.connect(self.on_slider_moved)
+        # Handle all slider changes (drag, click forward, click backward, arrow keys)
+        self.time_slider.valueChanged.connect(self.on_slider_value_changed)
         self.time_slider.sliderReleased.connect(self.on_slider_released)
 
         slider_row.addWidget(self.time_label)
         slider_row.addWidget(self.time_slider, stretch=1)
         scrub_layout.addLayout(slider_row)
 
-        # Quick Jump Buttons
-        jumps_row = QHBoxLayout()
-        jumps_row.addWidget(QLabel("Quick Jump:"))
+        # Step Navigation & Quick Jump Row
+        nav_row = QHBoxLayout()
+        nav_row.addWidget(QLabel("Step / Seek:"))
+
+        step_b5 = QPushButton("⏪ -5s")
+        step_b5.setFixedHeight(28)
+        step_b5.clicked.connect(lambda: self.step_seconds(-5.0))
+        nav_row.addWidget(step_b5)
+
+        step_b1 = QPushButton("◀ -1s")
+        step_b1.setFixedHeight(28)
+        step_b1.clicked.connect(lambda: self.step_seconds(-1.0))
+        nav_row.addWidget(step_b1)
+
+        step_f1 = QPushButton("+1s ▶")
+        step_f1.setFixedHeight(28)
+        step_f1.clicked.connect(lambda: self.step_seconds(1.0))
+        nav_row.addWidget(step_f1)
+
+        step_f5 = QPushButton("+5s ⏩")
+        step_f5.setFixedHeight(28)
+        step_f5.clicked.connect(lambda: self.step_seconds(5.0))
+        nav_row.addWidget(step_f5)
+
+        nav_row.addSpacing(15)
+        nav_row.addWidget(QLabel("Quick Jump:"))
         for pct, lbl in [(0.10, "10%"), (0.25, "25%"), (0.50, "50%"), (0.75, "75%"), (0.90, "90%")]:
             btn = QPushButton(lbl)
-            btn.setFixedHeight(26)
+            btn.setFixedHeight(28)
             btn.clicked.connect(lambda checked=False, p=pct: self.jump_to_pct(p))
-            jumps_row.addWidget(btn)
-        jumps_row.addStretch()
-        scrub_layout.addLayout(jumps_row)
+            nav_row.addWidget(btn)
+
+        nav_row.addStretch()
+        scrub_layout.addLayout(nav_row)
         layout.addWidget(scrub_group)
 
         # Control Panel: Modes & Eye Orientation
@@ -324,16 +374,35 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         secs = int(seconds % 60)
         return f"{mins:02d}:{secs:02d}"
 
-    def on_slider_moved(self, val: int):
-        self.current_time = (val / 1000.0) * self.duration
+    def on_slider_value_changed(self, val: int):
+        """Called immediately whenever the slider position changes (drag, click, or step)."""
+        self.current_time = max(0.0, min(self.duration, (val / 1000.0) * self.duration))
         self.time_label.setText(f"{self.format_time(self.current_time)} / {self.format_time(self.duration)}")
+        # Restart debounce timer (120ms) so rapid dragging doesn't spam ffmpeg
+        self.debounce_timer.start(120)
 
     def on_slider_released(self):
+        """Immediately triggers frame extraction when the user finishes dragging."""
+        self.debounce_timer.stop()
+        self.request_frame()
+
+    def step_seconds(self, delta: float):
+        """Steps forward or backward by delta seconds."""
+        new_time = max(0.0, min(self.duration, self.current_time + delta))
+        pct = new_time / self.duration
+        self.time_slider.blockSignals(True)
+        self.time_slider.setValue(int(pct * 1000))
+        self.time_slider.blockSignals(False)
+        self.current_time = new_time
+        self.time_label.setText(f"{self.format_time(self.current_time)} / {self.format_time(self.duration)}")
         self.request_frame()
 
     def jump_to_pct(self, pct: float):
-        self.current_time = pct * self.duration
+        """Jumps directly to a percentage position."""
+        self.time_slider.blockSignals(True)
         self.time_slider.setValue(int(pct * 1000))
+        self.time_slider.blockSignals(False)
+        self.current_time = pct * self.duration
         self.time_label.setText(f"{self.format_time(self.current_time)} / {self.format_time(self.duration)}")
         self.request_frame()
 
@@ -351,28 +420,41 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         if not self.input_file or not self.input_file.exists():
             return
 
-        self.image_label.setText("Rendering 3D preview frame...")
+        self.request_id += 1
+        req_id = self.request_id
 
-        if self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
+        # Cancel any previous in-flight workers safely without dropping references
+        for w in list(self._active_workers):
+            w.cancel()
 
-        self.worker = FrameExtractorWorker(
+        worker = FrameExtractorWorker(
+            request_id=req_id,
             input_file=self.input_file,
             right_file=self.right_file,
             format_type=self.format_type,
             timestamp=self.current_time,
             swap_eyes=self.swap_eyes,
-            mode=self.current_mode,
-            output_temp_jpg=self.temp_frame_path
+            mode=self.current_mode
         )
-        self.worker.frame_ready.connect(self.on_frame_ready)
-        self.worker.error_signal.connect(self.on_frame_error)
-        self.worker.start()
+        self._active_workers.append(worker)
 
-    def on_frame_ready(self, frame_path_str: str):
-        pixmap = QPixmap(frame_path_str)
-        if not pixmap.isNull():
+        def cleanup(w=worker):
+            if w in self._active_workers:
+                self._active_workers.remove(w)
+
+        worker.finished.connect(cleanup)
+        worker.frame_ready.connect(self.on_frame_ready)
+        worker.error_signal.connect(self.on_frame_error)
+        worker.start()
+
+    def on_frame_ready(self, req_id: int, img_bytes: bytes):
+        # Ignore outdated responses from earlier seek requests
+        if req_id != self.request_id:
+            return
+
+        pixmap = QPixmap()
+        if pixmap.loadFromData(img_bytes):
+            self.current_pixmap = pixmap
             scaled = pixmap.scaled(
                 self.image_label.size(),
                 Qt.KeepAspectRatio,
@@ -380,15 +462,21 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
             )
             self.image_label.setPixmap(scaled)
         else:
-            self.image_label.setText("Failed to load extracted frame.")
+            self.image_label.setText("Failed to decode frame from memory.")
 
-    def on_frame_error(self, err_msg: str):
-        self.image_label.setText(f"Preview extraction error:\n{err_msg}")
+    def on_frame_error(self, req_id: int, err_msg: str):
+        if req_id == self.request_id:
+            self.image_label.setText(f"Preview extraction error:\n{err_msg}")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self.temp_frame_path.exists():
-            self.on_frame_ready(str(self.temp_frame_path))
+        if self.current_pixmap and not self.current_pixmap.isNull():
+            scaled = self.current_pixmap.scaled(
+                self.image_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            self.image_label.setPixmap(scaled)
 
     def launch_ffplay(self):
         """Launches native ffplay window playing the active anaglyph video stream."""
@@ -412,7 +500,6 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         ]
 
         if is_dual:
-            # Complex pipeline piped into ffplay
             cmd_pipe = [
                 "ffmpeg", "-ss", str(round(self.current_time, 2)),
                 "-i", str(self.input_file),
@@ -431,9 +518,9 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
             subprocess.Popen(cmd)
 
     def closeEvent(self, event):
-        if self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
-        if self.temp_dir.exists():
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        self.debounce_timer.stop()
+        for w in list(self._active_workers):
+            w.cancel()
+            w.wait(200)
+        self._active_workers.clear()
         super().closeEvent(event)
