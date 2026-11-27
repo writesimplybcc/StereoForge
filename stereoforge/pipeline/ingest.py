@@ -4,10 +4,10 @@ Detects 3D layout (Full-SBS, Half-SBS, TAB, Dual Files, 3D-AVI),
 checks for HDR/10-bit color, and constructs clean FFmpeg filter graphs.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 import json
 import subprocess
 import re
@@ -59,6 +59,7 @@ class MediaProfile:
     stereo_format: StereoFormat
     audio_tracks: int
     subtitle_tracks: int
+    audio_streams: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class IngestionEngine:
@@ -159,6 +160,22 @@ class IngestionEngine:
 
         duration = float(data.get("format", {}).get("duration", 0.0))
 
+        audio_info_list = []
+        for i, a in enumerate(audio_streams):
+            tags = a.get("tags", {})
+            audio_info_list.append({
+                "stream_index": a.get("index"),
+                "audio_index": i,
+                "codec": a.get("codec_name", "unknown").lower(),
+                "channels": a.get("channels", 2),
+                "channel_layout": a.get("channel_layout", "stereo"),
+                "bit_rate": a.get("bit_rate"),
+                "sample_rate": a.get("sample_rate"),
+                "language": tags.get("language", "und"),
+                "title": tags.get("title", ""),
+                "tags": tags
+            })
+
         return MediaProfile(
             path=filepath,
             width=width,
@@ -172,7 +189,8 @@ class IngestionEngine:
             is_hdr=is_hdr,
             stereo_format=stereo_format,
             audio_tracks=len(audio_streams),
-            subtitle_tracks=len(sub_streams)
+            subtitle_tracks=len(sub_streams),
+            audio_streams=audio_info_list
         )
 
     @staticmethod

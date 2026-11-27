@@ -10,7 +10,7 @@ Executes the full pipeline:
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, List, Dict, Any
 import tempfile
 import time
 
@@ -33,6 +33,26 @@ class EncodeJob:
     layout_override: Optional[StereoFormat] = None
     auto_detect_inverted_eyes: bool = False
     engine_mode: str = "native_mvc"  # "native_mvc" (default) or "gpu_turbo"
+
+
+@dataclass
+class JobResult:
+    job: EncodeJob
+    success: bool
+    error: Optional[str] = None
+    elapsed_seconds: float = 0.0
+    output_size_bytes: int = 0
+
+
+@dataclass
+class BatchProgress:
+    current_job_index: int  # 0-based index of current job
+    total_jobs: int
+    current_job: EncodeJob
+    completed_jobs: int
+    failed_jobs: int
+    overall_progress: float  # 0.0 to 1.0 across the entire batch
+    job_results: List[JobResult]
 
 
 class StereoForgePipeline:
@@ -151,6 +171,7 @@ class StereoForgePipeline:
                     dependent_mvc_path=dep_mvc,
                     output_dir_or_iso=job.output_file,
                     audio_source_path=job.input_file,
+                    audio_streams=profile.audio_streams,
                     fps=str(round(profile.fps, 3))
                 )
             else:
@@ -236,3 +257,88 @@ class StereoForgePipeline:
             if temp_dir.exists():
                 import shutil
                 shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def run_batch(
+        self,
+        jobs: List[EncodeJob],
+        batch_progress_cb: Optional[Callable[[BatchProgress], None]] = None,
+        job_progress_cb: Optional[Callable[[str, float], None]] = None,
+        stop_on_error: bool = False
+    ) -> List[JobResult]:
+        """Executes a list of EncodeJobs sequentially as an unattended batch queue."""
+        results: List[JobResult] = []
+        total = len(jobs)
+        if total == 0:
+            return results
+
+        completed = 0
+        failed = 0
+
+        for idx, job in enumerate(jobs):
+            base_overall = idx / total
+            job_weight = 1.0 / total
+
+            def wrapped_job_progress(msg: str, job_pct: float):
+                overall = base_overall + (job_pct * job_weight)
+                if job_progress_cb:
+                    job_progress_cb(f"[{idx+1}/{total}] {msg}", overall)
+                if batch_progress_cb:
+                    batch_progress_cb(BatchProgress(
+                        current_job_index=idx,
+                        total_jobs=total,
+                        current_job=job,
+                        completed_jobs=completed,
+                        failed_jobs=failed,
+                        overall_progress=overall,
+                        job_results=results
+                    ))
+
+            job_start = time.time()
+            try:
+                success = self.run(job, progress_cb=wrapped_job_progress)
+                elapsed = time.time() - job_start
+                out_sz = job.output_file.stat().st_size if job.output_file.exists() else 0
+                if success:
+                    completed += 1
+                    results.append(JobResult(
+                        job=job,
+                        success=True,
+                        elapsed_seconds=elapsed,
+                        output_size_bytes=out_sz
+                    ))
+                else:
+                    failed += 1
+                    results.append(JobResult(
+                        job=job,
+                        success=False,
+                        error="Pipeline execution returned failure",
+                        elapsed_seconds=elapsed,
+                        output_size_bytes=out_sz
+                    ))
+                    if stop_on_error:
+                        break
+            except Exception as e:
+                elapsed = time.time() - job_start
+                failed += 1
+                results.append(JobResult(
+                    job=job,
+                    success=False,
+                    error=str(e),
+                    elapsed_seconds=elapsed,
+                    output_size_bytes=0
+                ))
+                if stop_on_error:
+                    break
+
+        if batch_progress_cb:
+            batch_progress_cb(BatchProgress(
+                current_job_index=total - 1,
+                total_jobs=total,
+                current_job=jobs[-1],
+                completed_jobs=completed,
+                failed_jobs=failed,
+                overall_progress=1.0,
+                job_results=results
+            ))
+
+        return results

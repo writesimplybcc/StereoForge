@@ -221,7 +221,7 @@ class MuxerEngine:
             if audio_source_path and audio_source_path.exists():
                 cmd.extend(["-i", str(audio_source_path)])
                 cmd.extend([
-                    "-map", "0:v", "-map", "1:v", "-map", "2:a?",
+                    "-map", "0:v", "-map", "1:v", "-map", "2:a?", "-map", "2:s?",
                     "-c", "copy",
                     "-disposition:v:0", "default",
                     "-metadata:s:v:0", "title=Left Eye (2D Base)",
@@ -290,10 +290,15 @@ class MuxerEngine:
         dependent_mvc_path: Path,
         output_dir_or_iso: Path,
         audio_source_path: Optional[Path] = None,
+        audio_streams: Optional[List[Dict[str, Any]]] = None,
         fps: str = "23.976",
         is_iso: bool = True
     ) -> bool:
-        """Generates a tsMuxeR meta script and authors a 3D Blu-ray structure or ISO."""
+        """Generates a tsMuxeR meta script and authors a 3D Blu-ray structure or ISO.
+
+        Preserves all audio streams with TrueHD/Atmos, DTS-HD MA, and AC3 passthrough.
+        Non-Blu-ray audio formats (Opus, AAC, FLAC, Vorbis) are transcoded to standard 640k AC-3.
+        """
         if not self.is_tsmuxer_available():
             raise FileNotFoundError(
                 "tsMuxeR is required to author 3D Blu-ray ISOs, but was not found. "
@@ -311,26 +316,82 @@ class MuxerEngine:
         dep_str = str(dependent_mvc_path).replace("\\", "/")
         meta_lines.append(f'V_MPEG4/ISO/MVC, "{dep_str}", fps={fps}')
 
-        temp_audio_ac3: Optional[Path] = None
+        temp_audio_files: List[Path] = []
         if audio_source_path and audio_source_path.exists():
-            # If the audio source is inside a container, extract to an elementary AC-3 stream for tsMuxeR
-            if audio_source_path.suffix.lower() in (".mp4", ".mkv", ".mov", ".avi", ".ts", ".m2ts"):
-                temp_audio_ac3 = output_dir_or_iso.parent / "temp_tsmuxer_audio.ac3"
+            streams_to_process = audio_streams
+            if streams_to_process is None:
+                # Probe audio streams if not explicitly passed
                 try:
-                    subprocess.run(
-                        ["ffmpeg", "-y", "-i", str(audio_source_path), "-vn", "-c:a", "ac3", "-b:a", "640k", str(temp_audio_ac3)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=True
-                    )
-                    audio_str = str(temp_audio_ac3).replace("\\", "/")
-                    meta_lines.append(f'A_AC3, "{audio_str}"')
+                    from stereoforge.pipeline.ingest import IngestionEngine
+                    probe_prof = IngestionEngine().probe(audio_source_path)
+                    streams_to_process = probe_prof.audio_streams
                 except Exception:
-                    # In case of no audio track in file
-                    pass
-            else:
-                audio_str = str(audio_source_path).replace("\\", "/")
-                meta_lines.append(f'A_AC3, "{audio_str}"')
+                    streams_to_process = [{"audio_index": 0, "codec": "unknown", "language": "und"}]
+
+            for a_info in streams_to_process:
+                a_idx = a_info.get("audio_index", 0)
+                codec = str(a_info.get("codec", "unknown")).lower()
+                lang = a_info.get("language", "und")
+                lang_param = f", lang={lang}" if lang and lang != "und" else ""
+
+                try:
+                    if codec in ("truehd",):
+                        temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.thd"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "copy", str(temp_file)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_file)
+                        a_str = str(temp_file).replace("\\", "/")
+                        meta_lines.append(f'A_TRUE-HD, "{a_str}"{lang_param}')
+                    elif codec in ("dts", "dts-hd", "dtshd", "dca"):
+                        temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.dts"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "copy", str(temp_file)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_file)
+                        a_str = str(temp_file).replace("\\", "/")
+                        meta_lines.append(f'A_DTS, "{a_str}"{lang_param}')
+                    elif codec in ("ac3",):
+                        temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.ac3"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "copy", str(temp_file)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_file)
+                        a_str = str(temp_file).replace("\\", "/")
+                        meta_lines.append(f'A_AC3, "{a_str}"{lang_param}')
+                    elif codec in ("eac3",):
+                        temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.eac3"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "copy", str(temp_file)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_file)
+                        a_str = str(temp_file).replace("\\", "/")
+                        meta_lines.append(f'A_EAC3, "{a_str}"{lang_param}')
+                    elif codec in ("pcm_s16le", "pcm_s24le", "pcm_bluray", "pcm_s32le", "wav"):
+                        temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.wav"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "pcm_s16le", str(temp_file)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_file)
+                        a_str = str(temp_file).replace("\\", "/")
+                        meta_lines.append(f'A_LPCM, "{a_str}"{lang_param}')
+                    else:
+                        # Non-Blu-ray format (Opus, AAC, FLAC, Vorbis, etc.) -> transcode to 640k AC-3
+                        temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.ac3"
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "ac3", "-b:a", "640k", str(temp_file)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                        )
+                        temp_audio_files.append(temp_file)
+                        a_str = str(temp_file).replace("\\", "/")
+                        meta_lines.append(f'A_AC3, "{a_str}"{lang_param}')
+                except Exception as e:
+                    print(f"[StereoForge] Warning: could not extract/transcode audio track {a_idx} ({codec}): {e}")
 
         meta_file = output_dir_or_iso.parent / "stereoforge_tsmuxer.meta"
         with open(meta_file, "w", encoding="utf-8") as f:
@@ -348,5 +409,6 @@ class MuxerEngine:
         finally:
             if meta_file.exists():
                 meta_file.unlink()
-            if temp_audio_ac3 and temp_audio_ac3.exists():
-                temp_audio_ac3.unlink()
+            for tmp in temp_audio_files:
+                if tmp.exists():
+                    tmp.unlink()
