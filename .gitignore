@@ -11,6 +11,7 @@ __pycache__/
 # Test media and Clips folders (never upload)
 [Cc]lip/
 [Cc]lips/
+[Oo]utput/
 *.mp4
 *.m4v
 *.mov

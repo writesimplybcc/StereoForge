@@ -207,10 +207,43 @@ class MuxerEngine:
     ) -> bool:
         """Packs Base View + Right Eye into a clean stereoscopic Matroska container."""
         if not self.is_mkvmerge_available():
-            raise FileNotFoundError(
-                "mkvmerge is required to package 3D MKVs, but was not found. "
-                "Please install MKVToolNix or add it to your system PATH."
-            )
+            # Fallback to FFmpeg native Matroska stream-copy packaging
+            print("[StereoForge] mkvmerge not found, using FFmpeg to package stereoscopic Matroska...")
+            cmd = [
+                "ffmpeg", "-y",
+                "-r", "24000/1001",
+                "-i", str(base_video_path),
+                "-r", "24000/1001",
+                "-i", str(dependent_video_path),
+            ]
+            if audio_source_path and audio_source_path.exists():
+                cmd.extend(["-i", str(audio_source_path)])
+                cmd.extend([
+                    "-map", "0:v", "-map", "1:v", "-map", "2:a?",
+                    "-c", "copy",
+                    "-disposition:v:0", "default",
+                    "-metadata:s:v:0", "title=Left Eye (2D Base)",
+                    "-metadata:s:v:1", "title=Right Eye (3D View)",
+                ])
+            else:
+                cmd.extend([
+                    "-map", "0:v", "-map", "1:v",
+                    "-c", "copy",
+                    "-disposition:v:0", "default",
+                    "-metadata:s:v:0", "title=Left Eye (2D Base)",
+                    "-metadata:s:v:1", "title=Right Eye (3D View)",
+                ])
+
+            if title and title.strip():
+                cmd.extend(["-metadata", f"title={title.strip()}"])
+
+            cmd.append(str(output_mkv_path))
+            try:
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+                return True
+            except subprocess.CalledProcessError as e:
+                print(f"[StereoForge] FFmpeg MKV muxing failed: {e.stderr}")
+                return False
 
         cmd = [
             self.mkvmerge_bin,
