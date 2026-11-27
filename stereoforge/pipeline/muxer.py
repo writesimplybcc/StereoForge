@@ -203,17 +203,19 @@ class MuxerEngine:
         output_mkv_path: Path,
         audio_source_path: Optional[Path] = None,
         subtitle_paths: Optional[List[Path]] = None,
-        title: Optional[str] = None
+        title: Optional[str] = None,
+        fps: Optional[str] = None
     ) -> bool:
         """Packs Base View + Right Eye into a clean stereoscopic Matroska container."""
+        fps_str = str(fps) if fps else "24000/1001"
         if not self.is_mkvmerge_available():
             # Fallback to FFmpeg native Matroska stream-copy packaging
-            print("[StereoForge] mkvmerge not found, using FFmpeg to package stereoscopic Matroska...")
+            print(f"[StereoForge] mkvmerge not found, using FFmpeg to package stereoscopic Matroska @ {fps_str} fps...")
             cmd = [
                 "ffmpeg", "-y",
-                "-r", "24000/1001",
+                "-r", fps_str,
                 "-i", str(base_video_path),
-                "-r", "24000/1001",
+                "-r", fps_str,
                 "-i", str(dependent_video_path),
             ]
             if audio_source_path and audio_source_path.exists():

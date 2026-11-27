@@ -121,7 +121,8 @@ class StereoForgePipeline:
                     dependent_video_path=dep_264,
                     output_mkv_path=job.output_file,
                     audio_source_path=job.input_file,
-                    title=job.title
+                    title=job.title,
+                    fps=str(round(profile.fps, 3))
                 )
 
             elapsed = time.time() - start_time
