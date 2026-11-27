@@ -21,8 +21,10 @@ __pycache__/
 *.avi
 *.yuv
 
-# C/C++ CMake build artifacts
+# C/C++ CMake build artifacts & portable tools
 build/
+tools/
+*.zip
 *.obj
 *.lib
 *.exp

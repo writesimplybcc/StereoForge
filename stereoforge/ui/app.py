@@ -23,6 +23,9 @@ except ImportError:
 from stereoforge import __version__
 from stereoforge.pipeline.orchestrator import StereoForgePipeline, EncodeJob
 from stereoforge.pipeline.ingest import IngestionEngine, StereoFormat, find_matching_eye_file
+from stereoforge.pipeline.pass1_base import detect_best_h264_encoder
+from stereoforge.pipeline.muxer import find_tsmuxer
+from stereoforge_core.python.native_bridge import NativeMVCEngine
 from stereoforge.ui.preview import AnaglyphPreviewDialog
 
 
@@ -233,6 +236,34 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         top_bar.addLayout(theme_box)
 
         root_layout.addLayout(top_bar)
+
+        # Hardware & Native Engine Status Bar
+        engine_bar = QHBoxLayout()
+        engine_bar.setSpacing(10)
+
+        hw_enc = detect_best_h264_encoder()
+        gpu_badge = f"⚡ GPU: {hw_enc.upper()} Active" if hw_enc != "libx264" else "💻 CPU: libx264"
+        self.gpu_status_lbl = QLabel(gpu_badge)
+        self.gpu_status_lbl.setStyleSheet("background: rgba(34, 197, 94, 0.15); color: #16A34A; font-weight: bold; font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(34, 197, 94, 0.3);")
+
+        c_available = NativeMVCEngine.is_available()
+        c_badge = "⚡ stereoforge-core (C/C++): Active" if c_available else "⚠️ stereoforge-core: Inactive"
+        self.c_status_lbl = QLabel(c_badge)
+        self.c_status_lbl.setStyleSheet("background: rgba(14, 165, 233, 0.15); color: #0284C7; font-weight: bold; font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(14, 165, 233, 0.3);")
+
+        tsmuxer_bin = find_tsmuxer()
+        import shutil
+        ts_ok = shutil.which(tsmuxer_bin) is not None or Path(tsmuxer_bin).is_file()
+        ts_badge = "💿 tsMuxeR: Ready (3D BD / ISO)" if ts_ok else "💿 tsMuxeR: Not Found"
+        self.ts_status_lbl = QLabel(ts_badge)
+        self.ts_status_lbl.setStyleSheet("background: rgba(168, 85, 247, 0.15); color: #9333EA; font-weight: bold; font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.3);")
+
+        engine_bar.addWidget(self.gpu_status_lbl)
+        engine_bar.addWidget(self.c_status_lbl)
+        engine_bar.addWidget(self.ts_status_lbl)
+        engine_bar.addStretch()
+
+        root_layout.addLayout(engine_bar)
 
         # Main Splitter (Left Column ~50%, Right Column ~50%)
         splitter = QSplitter(Qt.Horizontal)
