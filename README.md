@@ -70,6 +70,9 @@ StereoForge relies on standard tools for hardware encoding, container packaging,
   - 8 distinct UI themes (4 Clean Light, 4 Modern Dark) with persistent theme memory.
 - **Uncapped Bitrate Control:**
   - Presets for VR Streaming (20 Mbps), BD-50 (40 Mbps), BD-25 (23 Mbps), and manual adjustment up to 120+ Mbps.
+- **Framerate Compatibility & Authoring Rules:**
+  - **Playable Physical 3D Blu-ray Discs:** Must be encoded at **1080p @ 23.976 / 24 fps** (with the 40 Mbps VBV cap) to comply with the Blu-ray Disc Association (BDA) hardware standard for standalone consumer players (Sony, Panasonic, Oppo).
+  - **Network / File / VLC4MVC Playback:** If playing from a NAS (SMB/NFS), BD data disc, or USB on Android players (Zidoo, Dune HD, Shield, Ugoos) connected to 3D 4K projectors, **arbitrary native framerates (24, 30, 48 HFR, 50, 60 fps)** and uncapped bitrates are fully supported without physical disc constraints.
 - **Lossless Audio Passthrough:**
   - Direct bitstream copy for Dolby Atmos, TrueHD, DTS:X, and DTS-HD Master Audio.
 

@@ -74,6 +74,12 @@ class StereoForgePipeline:
         is_iso = job.output_file.suffix.lower() in (".iso", ".m2ts") or job.output_file.is_dir() or not job.output_file.suffix
         dep_mvc = (temp_dir / "dependent_right.mvc") if is_iso else None
 
+        if is_iso and not (23.97 <= profile.fps <= 24.01):
+            report(
+                f"ℹ️ Reminder: Source is {profile.fps:.2f} fps. Physical 3D Blu-ray video discs for standalone consumer players strictly require 1080p @ 23.976 fps. For VLC4MVC, Android players, or network streaming, {profile.fps:.2f} fps will play normally.",
+                0.07
+            )
+
         try:
             # Stage 1: Pass 1 Base View (GPU)
             report(f"Pass 1: Encoding Left Eye ({base_kbps} kbps on {self.base_encoder.encoder})...", 0.10)

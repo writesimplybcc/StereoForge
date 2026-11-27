@@ -36,6 +36,9 @@ def main():
     print(f"   Resolution: {profile.width}x{profile.height} @ {profile.fps:.3f} fps")
     print(f"   Color profile: 10-bit={profile.is_10bit}, HDR={profile.is_hdr}")
 
+    if args.output.suffix.lower() == ".iso" and not (23.97 <= profile.fps <= 24.01):
+        print(f"ℹ️ Reminder: Source is {profile.fps:.2f} fps. Physical 3D Blu-ray video discs for standalone consumer players strictly require 1080p @ 23.976 fps. For VLC4MVC, Android players, or network streaming, {profile.fps:.2f} fps will play normally.")
+
     print("✅ Configuration validated. Ready for pipeline execution.")
     return 0
 

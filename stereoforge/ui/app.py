@@ -379,6 +379,11 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         fmt_row.addWidget(self.output_format_combo, stretch=1)
         out_layout.addLayout(fmt_row)
 
+        self.format_note_lbl = QLabel("💡 Matroska (.mkv): Universal dual-track/MVC for Quest, Vision Pro, 4XVR, VLC. Supports arbitrary framerates (24, 30, 48, 60 fps).")
+        self.format_note_lbl.setWordWrap(True)
+        self.format_note_lbl.setStyleSheet("font-size: 11px; color: #64748B; padding: 2px 4px;")
+        out_layout.addWidget(self.format_note_lbl)
+
         dest_row = QHBoxLayout()
         dest_row.addWidget(QLabel("Save To:"))
         self.output_path_edit = QLineEdit()
@@ -647,6 +652,9 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
                         self.log(f"Detected 3D Format: Top-and-Bottom ({profile.width}x{profile.height})")
                     else:
                         self.layout_combo.setCurrentIndex(0)
+
+                    if profile.fps and not (23.97 <= profile.fps <= 24.01):
+                        self.log(f"ℹ️ Framerate Note: Input is {profile.fps:.2f} fps. For physical 3D Blu-ray video discs on standalone players, 1080p @ 23.976 fps is strictly required. For VLC4MVC, Android, and network streaming, {profile.fps:.2f} fps will play normally.")
                 except Exception:
                     pass
 
@@ -707,6 +715,13 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
                 self.log("👁️ Eye orientation set to: STANDARD (Normal Left/Right)")
 
     def on_output_format_changed(self, index: int):
+        if index == 0:
+            self.format_note_lbl.setText("💡 Matroska (.mkv): Universal dual-track/MVC for Quest, Vision Pro, 4XVR, VLC. Supports arbitrary framerates (24, 30, 48, 60 fps).")
+            self.format_note_lbl.setStyleSheet("font-size: 11px; color: #64748B; padding: 2px 4px;")
+        else:
+            self.format_note_lbl.setText("⚠️ Playable 3D Blu-ray Requirement: Burning a playable disc for standalone consumer players requires strictly 1080p @ 23.976/24 fps and max 40 Mbps. (Network & VLC4MVC file playback supports arbitrary framerates).")
+            self.format_note_lbl.setStyleSheet("font-size: 11px; color: #D97706; font-weight: 500; padding: 2px 4px;")
+
         cur_text = self.output_path_edit.text().strip()
         if not cur_text:
             return
