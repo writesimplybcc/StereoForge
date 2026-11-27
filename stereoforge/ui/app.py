@@ -11,7 +11,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QFileDialog, QSlider, QComboBox, QCheckBox,
-        QProgressBar, QTextEdit, QGroupBox, QSplitter
+        QProgressBar, QTextEdit, QGroupBox, QSplitter, QLineEdit
     )
     from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtGui import QIcon, QFont, QColor
@@ -21,6 +21,7 @@ except ImportError:
 
 from stereoforge import __version__
 from stereoforge.pipeline.orchestrator import StereoForgePipeline, EncodeJob
+from stereoforge.pipeline.ingest import IngestionEngine, StereoFormat, find_matching_eye_file
 
 
 class WorkerThread(QThread if HAS_PYSIDE6 else object):
@@ -40,9 +41,14 @@ class WorkerThread(QThread if HAS_PYSIDE6 else object):
             if HAS_PYSIDE6:
                 self.progress_signal.emit(msg, pct)
 
-        success = pipeline.run(self.job, progress_cb=on_progress)
-        if HAS_PYSIDE6:
-            self.finished_signal.emit(success, str(self.job.output_file))
+        try:
+            success = pipeline.run(self.job, progress_cb=on_progress)
+            if HAS_PYSIDE6:
+                self.finished_signal.emit(success, str(self.job.output_file))
+        except Exception as e:
+            if HAS_PYSIDE6:
+                self.progress_signal.emit(f"❌ Error during encode: {e}", 0.0)
+                self.finished_signal.emit(False, str(e))
 
 
 class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
@@ -56,6 +62,7 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         self.setWindowTitle(f"StereoForge v{__version__} - Stereoscopic 3D MVC Suite")
         self.resize(1000, 750)
         self.input_file: Optional[Path] = None
+        self.right_file: Optional[Path] = None
         self.worker: Optional[WorkerThread] = None
 
         self.init_ui()
@@ -81,13 +88,38 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         # File Drop Zone / Selector
         drop_box = QGroupBox("📁 Input 3D Media")
-        drop_layout = QHBoxLayout(drop_box)
-        self.file_label = QLabel("No 3D video file selected (Drag & drop or click Browse)")
+        drop_layout = QVBoxLayout(drop_box)
+
+        file_row = QHBoxLayout()
+        self.file_label = QLabel("Left Eye / 3D File: No file selected (Click Browse)")
         self.file_label.setStyleSheet("color: #E2E8F0; font-size: 13px;")
         browse_btn = QPushButton("Browse...")
         browse_btn.clicked.connect(self.browse_file)
-        drop_layout.addWidget(self.file_label, stretch=1)
-        drop_layout.addWidget(browse_btn)
+        file_row.addWidget(self.file_label, stretch=1)
+        file_row.addWidget(browse_btn)
+        drop_layout.addLayout(file_row)
+
+        right_row = QHBoxLayout()
+        self.right_file_label = QLabel("Right Eye: (Auto-detected or packed in main file)")
+        self.right_file_label.setStyleSheet("color: #8D99AE; font-size: 12px;")
+        browse_right_btn = QPushButton("Browse Right...")
+        browse_right_btn.clicked.connect(self.browse_right_file)
+        right_row.addWidget(self.right_file_label, stretch=1)
+        right_row.addWidget(browse_right_btn)
+        drop_layout.addLayout(right_row)
+
+        layout_row = QHBoxLayout()
+        layout_row.addWidget(QLabel("3D Layout:"))
+        self.layout_combo = QComboBox()
+        self.layout_combo.addItems([
+            "Auto-Detect (Aspect ratio & filename)",
+            "Side-by-Side (SBS / Half-SBS / 4K SBS)",
+            "Top-and-Bottom (TAB / Over-Under / 4K TAB)",
+            "Separate Left & Right Files (Dual Files)"
+        ])
+        layout_row.addWidget(self.layout_combo, stretch=1)
+        drop_layout.addLayout(layout_row)
+
         layout.addWidget(drop_box)
 
         # Quality & Bitrate Settings
@@ -131,6 +163,41 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         layout.addWidget(settings_box)
 
+        # Output Destination & Packaging Format
+        output_box = QGroupBox("💾 Output Settings & Destination")
+        out_layout = QVBoxLayout(output_box)
+
+        fmt_row = QHBoxLayout()
+        fmt_row.addWidget(QLabel("Output Container:"))
+        self.output_format_combo = QComboBox()
+        self.output_format_combo.addItems([
+            "3D MVC Matroska (.mkv) — Meta Quest, Vision Pro, 4XVR, VLC (mkvmerge)",
+            "3D Blu-ray ISO (.iso) — Physical 3D Disc & Projectors (tsMuxeR)",
+            "3D Blu-ray Folder (BDMV) — Directory Structure (tsMuxeR)"
+        ])
+        self.output_format_combo.currentIndexChanged.connect(self.on_output_format_changed)
+        fmt_row.addWidget(self.output_format_combo, stretch=1)
+        out_layout.addLayout(fmt_row)
+
+        dest_row = QHBoxLayout()
+        dest_row.addWidget(QLabel("Save To:"))
+        self.output_path_edit = QLineEdit()
+        self.output_path_edit.setPlaceholderText("Select an input file or click Browse to choose destination...")
+        browse_out_btn = QPushButton("Browse...")
+        browse_out_btn.clicked.connect(self.browse_output_file)
+        dest_row.addWidget(self.output_path_edit, stretch=1)
+        dest_row.addWidget(browse_out_btn)
+        out_layout.addLayout(dest_row)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel("Title (Optional):"))
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("Leave blank to display filename in players, or enter custom title...")
+        title_row.addWidget(self.title_edit, stretch=1)
+        out_layout.addLayout(title_row)
+
+        layout.addWidget(output_box)
+
         # Encode Action
         action_row = QHBoxLayout()
         self.start_btn = QPushButton("🚀 Start 3D Encode")
@@ -162,6 +229,7 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             QLabel { color: #E2E8F0; }
             QPushButton { background-color: #1C2541; color: #FFFFFF; border: 1px solid #3A506B; border-radius: 4px; padding: 6px 14px; }
             QPushButton:hover { background-color: #3A506B; }
+            QLineEdit { background-color: #1C2541; color: #FFFFFF; border: 1px solid #3A506B; border-radius: 4px; padding: 6px 10px; font-size: 13px; }
             QComboBox { background-color: #1C2541; color: #FFFFFF; border: 1px solid #3A506B; border-radius: 4px; padding: 4px; }
             QCheckBox { color: #E2E8F0; }
             QProgressBar { border: 1px solid #1C2541; border-radius: 4px; text-align: center; color: white; background-color: #1C2541; }
@@ -169,11 +237,75 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         """)
 
     def browse_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select 3D Video File", "", "Video Files (*.mp4 *.mkv *.mov *.avi *.mts *.m2ts)")
+        path, _ = QFileDialog.getOpenFileName(self, "Select Left Eye / 3D Video File", "", "Video Files (*.mp4 *.mkv *.mov *.avi *.mts *.m2ts)")
         if path:
             self.input_file = Path(path)
-            self.file_label.setText(f"Loaded: {self.input_file.name}")
-            self.log(f"Ingested: {self.input_file}")
+            self.file_label.setText(f"Left: {self.input_file.name}")
+            self.log(f"Ingested Left: {self.input_file}")
+
+            # Auto-suggest output path
+            fmt_idx = self.output_format_combo.currentIndex()
+            ext = ".mkv" if fmt_idx == 0 else (".iso" if fmt_idx == 1 else "_BDMV")
+            suggested = self.input_file.with_name(f"{self.input_file.stem}_3D{ext}")
+            self.output_path_edit.setText(str(suggested))
+
+            # Check for auto-paired right eye file
+            paired_right = find_matching_eye_file(self.input_file)
+            if paired_right:
+                self.right_file = paired_right
+                self.right_file_label.setText(f"Right Eye (Auto-paired): {self.right_file.name}")
+                self.layout_combo.setCurrentIndex(3)
+                self.log(f"🎉 Auto-paired matching Right Eye: {self.right_file.name}")
+            else:
+                self.right_file = None
+                self.right_file_label.setText("Right Eye: (None / Packed in main file)")
+                try:
+                    profile = IngestionEngine().probe(self.input_file)
+                    if profile.stereo_format in (StereoFormat.FULL_SBS, StereoFormat.HALF_SBS):
+                        self.layout_combo.setCurrentIndex(1)
+                        self.log(f"Detected 3D Format: Side-by-Side ({profile.width}x{profile.height})")
+                    elif profile.stereo_format in (StereoFormat.FULL_TAB, StereoFormat.HALF_TAB):
+                        self.layout_combo.setCurrentIndex(2)
+                        self.log(f"Detected 3D Format: Top-and-Bottom ({profile.width}x{profile.height})")
+                    else:
+                        self.layout_combo.setCurrentIndex(0)
+                except Exception:
+                    pass
+
+    def browse_right_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select Right Eye Video File", "", "Video Files (*.mp4 *.mkv *.mov *.avi *.mts *.m2ts)")
+        if path:
+            self.right_file = Path(path)
+            self.right_file_label.setText(f"Right: {self.right_file.name}")
+            self.layout_combo.setCurrentIndex(3)
+            self.log(f"Selected Right Eye video: {self.right_file}")
+
+    def on_output_format_changed(self, index: int):
+        cur_text = self.output_path_edit.text().strip()
+        if not cur_text:
+            return
+        p = Path(cur_text)
+        parent = p.parent
+        stem = p.stem.removesuffix("_3D")
+        if index == 0:
+            self.output_path_edit.setText(str(parent / f"{stem}_3D.mkv"))
+        elif index == 1:
+            self.output_path_edit.setText(str(parent / f"{stem}_3D.iso"))
+        else:
+            self.output_path_edit.setText(str(parent / f"{stem}_3D_BDMV"))
+
+    def browse_output_file(self):
+        cur_text = self.output_path_edit.text().strip()
+        initial_dir = str(Path(cur_text).parent) if cur_text else ""
+        fmt_idx = self.output_format_combo.currentIndex()
+        if fmt_idx == 0:
+            path, _ = QFileDialog.getSaveFileName(self, "Save 3D Matroska Video", cur_text or initial_dir, "3D Matroska (*.mkv)")
+        elif fmt_idx == 1:
+            path, _ = QFileDialog.getSaveFileName(self, "Save 3D Blu-ray ISO", cur_text or initial_dir, "3D Blu-ray ISO (*.iso)")
+        else:
+            path = QFileDialog.getExistingDirectory(self, "Select Output BDMV Directory", initial_dir)
+        if path:
+            self.output_path_edit.setText(path)
 
     def on_preset_changed(self, index: int):
         if index == 0:  # VR
@@ -199,16 +331,35 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             self.log("⚠️ Please select an input 3D video file first.")
             return
 
-        out_path, _ = QFileDialog.getSaveFileName(self, "Save 3D Video", str(self.input_file.with_name(f"{self.input_file.stem}_3D.mkv")), "3D Matroska (*.mkv);;3D Blu-ray ISO (*.iso)")
-        if not out_path:
+        out_path_str = self.output_path_edit.text().strip()
+        if not out_path_str:
+            self.log("⚠️ Please specify an output save destination first.")
             return
+
+        out_path = Path(out_path_str)
+
+        layout_idx = self.layout_combo.currentIndex()
+        layout_override = None
+        right_input = None
+        if layout_idx == 1:
+            layout_override = StereoFormat.HALF_SBS
+        elif layout_idx == 2:
+            layout_override = StereoFormat.HALF_TAB
+        elif layout_idx == 3:
+            layout_override = StereoFormat.DUAL_FILES
+            right_input = self.right_file
+
+        custom_title = self.title_edit.text().strip() or None
 
         job = EncodeJob(
             input_file=self.input_file,
+            right_file=right_input,
             output_file=Path(out_path),
             target_bitrate_mbps=self.bitrate_slider.value(),
             strict_bluray=self.bluray_cap_cb.isChecked(),
-            swap_eyes=self.swap_eyes_cb.isChecked()
+            swap_eyes=self.swap_eyes_cb.isChecked(),
+            title=custom_title,
+            layout_override=layout_override
         )
 
         self.start_btn.setEnabled(False)

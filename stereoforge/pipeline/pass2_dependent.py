@@ -31,26 +31,28 @@ class DependentViewEncoder:
         profile: MediaProfile,
         base_bitstream_path: Path,
         manifest: FrameManifest,
-        output_dependent_mvc: Path,
+        output_dependent_264: Path,
+        output_dependent_mvc: Optional[Path] = None,
         bitrate_kbps: int = 12000,
         swap_eyes: bool = False,
+        right_file: Optional[Path] = None,
         progress_cb: Optional[Callable[[int, int], None]] = None
     ) -> bool:
         """Encodes the Dependent View (Right Eye) slaved to the manifest."""
+        input_media = right_file if (right_file and right_file.exists()) else profile.path
         _, right_filter = IngestionEngine.get_filter_chains(profile, swap_eyes=swap_eyes)
 
-        print(f"[StereoForge] Pass 2 Dependent View MVC encoding (Target: {bitrate_kbps} kbps)...")
+        print(f"[StereoForge] Pass 2 Dependent View encoding (Target: {bitrate_kbps} kbps)...")
+        print(f"             Input: {input_media.name}")
         print(f"             Synchronizing across {len(manifest.frames)} frames from manifest...")
-
-        # Temporary raw elementary stream before MVC NAL wrapper
-        temp_right_raw = output_dependent_mvc.parent / "temp_right_raw.264"
 
         # Pass 2 Video Encoding with exact GOP locking
         cmd = [
             self.ffmpeg_bin,
             "-y",
-            "-i", str(profile.path),
+            "-i", str(input_media),
             "-vf", right_filter,
+            "-pix_fmt", "yuv420p",
             "-c:v", "libx264",
             "-b:v", f"{bitrate_kbps}k",
             "-profile:v", "high",
@@ -60,7 +62,7 @@ class DependentViewEncoder:
             "-sc_threshold", "0",
             "-an",
             "-f", "h264",
-            str(temp_right_raw)
+            str(output_dependent_264)
         ]
 
         try:
@@ -69,14 +71,12 @@ class DependentViewEncoder:
             print(f"[StereoForge] Pass 2 failed: {e.stderr}")
             return False
 
-        # Convert raw H.264 slices to Annex H MVC NAL Unit Type 20 slices
-        print("[StereoForge] Packaging Annex H MVC Subset SPS and NAL Unit Type 20 slices...")
-        success = self._wrap_mvc_stream(temp_right_raw, output_dependent_mvc, manifest)
+        if output_dependent_mvc:
+            # Convert raw H.264 slices to Annex H MVC NAL Unit Type 20 slices for tsMuxeR / Blu-ray
+            print("[StereoForge] Packaging Annex H MVC Subset SPS and NAL Unit Type 20 slices for 3D Blu-ray...")
+            return self._wrap_mvc_stream(output_dependent_264, output_dependent_mvc, manifest)
 
-        if temp_right_raw.exists():
-            temp_right_raw.unlink()
-
-        return success
+        return True
 
     def _wrap_mvc_stream(
         self,

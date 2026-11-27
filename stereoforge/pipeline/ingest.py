@@ -10,6 +10,28 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 import json
 import subprocess
+import re
+
+
+def find_matching_eye_file(left_path: Path) -> Optional[Path]:
+    """Finds an accompanying Right Eye video file in the same directory."""
+    name = left_path.name
+    parent = left_path.parent
+    patterns = [
+        (re.compile(r"([_\-\.]?)left([_\-\.]?)", re.IGNORECASE), r"\1right\2"),
+        (re.compile(r"([_\-\.])l([_\-\.])", re.IGNORECASE), r"\1r\2"),
+        (re.compile(r"([_\-\.])l(\.[^.]+)$", re.IGNORECASE), r"\1r\2"),
+        (re.compile(r"([_\-\.])left(\.[^.]+)$", re.IGNORECASE), r"\1right\2"),
+        (re.compile(r"([_\-\.]?)eye[_\-\.]?1([_\-\.]?)", re.IGNORECASE), r"\1eye_2\2"),
+        (re.compile(r"([_\-\.]?)cam[_\-\.]?1([_\-\.]?)", re.IGNORECASE), r"\1cam_2\2"),
+    ]
+    for pattern, repl in patterns:
+        if pattern.search(name):
+            cand_name = pattern.sub(repl, name)
+            for item in parent.iterdir():
+                if item.name.lower() == cand_name.lower() and item != left_path:
+                    return item
+    return None
 
 
 class StereoFormat(Enum):
@@ -88,19 +110,41 @@ class IngestionEngine:
         is_10bit = "10" in pix_fmt or "p010" in pix_fmt
         is_hdr = is_10bit and ("bt2020" in color_primaries or "arib" in color_primaries)
 
-        # Detect 3D Layout heuristic based on aspect ratio
+        # Detect 3D Layout heuristic based on metadata tags, filename hints, and aspect ratio
         stereo_format = StereoFormat.UNKNOWN
         video_count = sum(1 for s in data.get("streams", []) if s.get("codec_type") == "video")
+        filename_lower = filepath.name.lower()
+        aspect = width / max(1, height)
 
-        if video_count > 1 and filepath.suffix.lower() == ".avi":
+        # Check stream/format metadata tags & side data for explicit 3D flags
+        stream_tags = video_stream.get("tags", {})
+        format_tags = data.get("format", {}).get("tags", {})
+        tag_blob = " ".join([str(v) for v in list(stream_tags.values()) + list(format_tags.values())]).lower()
+
+        matching_right = find_matching_eye_file(filepath)
+        if matching_right:
+            stereo_format = StereoFormat.DUAL_FILES
+        elif video_count > 1 and filepath.suffix.lower() == ".avi":
             stereo_format = StereoFormat.MULTI_STREAM_AVI
-        elif width >= 3840 and height <= 1200:
+        elif any(k in tag_blob for k in ["top_bottom", "topbottom", "over_under", "overunder", "tab", "hou"]):
+            stereo_format = StereoFormat.FULL_TAB if aspect <= 1.0 else StereoFormat.HALF_TAB
+        elif any(k in tag_blob for k in ["side_by_side", "sidebyside", "left_right", "sbs", "hsbs"]):
+            stereo_format = StereoFormat.FULL_SBS if aspect >= 3.0 else StereoFormat.HALF_SBS
+        elif any(k in filename_lower for k in ["tab", "overunder", "over-under", "topbottom", "top-bottom", "_ou", "-ou", "hou", "fou"]):
+            stereo_format = StereoFormat.FULL_TAB if aspect <= 1.0 else StereoFormat.HALF_TAB
+        elif any(k in filename_lower for k in ["sbs", "sidebyside", "side-by-side", "half-sbs", "hsbs", "fsbs"]):
+            stereo_format = StereoFormat.FULL_SBS if aspect >= 3.0 else StereoFormat.HALF_SBS
+        elif aspect >= 3.0 or (width >= 3840 and height <= 1200):
+            # Ultra-wide aspect: Full-SBS (e.g. 3840x1080 or 7680x2160)
             stereo_format = StereoFormat.FULL_SBS
-        elif width == 1920 and height <= 1080 and (width / max(1, height)) > 1.7:
-            # Could be Half-SBS (user can confirm or toggle)
-            stereo_format = StereoFormat.HALF_SBS
-        elif height >= 2160 and width <= 2000:
+        elif aspect <= 1.0 or (height >= 2160 and width <= 2000):
+            # Tall aspect: Full-TAB (e.g. 1920x2160 or 3840x4320)
             stereo_format = StereoFormat.FULL_TAB
+        elif width >= 3840 and height >= 2160:
+            # Standard 4K UHD 16:9 frame packing 3D (default to SBS if no TAB hint)
+            stereo_format = StereoFormat.HALF_SBS
+        elif width == 1920 and height <= 1080 and aspect > 1.7:
+            stereo_format = StereoFormat.HALF_SBS
         elif height > width:
             stereo_format = StereoFormat.HALF_TAB
 
@@ -146,14 +190,14 @@ class IngestionEngine:
         fmt = profile.stereo_format
 
         if fmt == StereoFormat.FULL_SBS:
-            l_crop = "crop=iw/2:ih:0:0"
-            r_crop = "crop=iw/2:ih:iw/2:0"
+            l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h}"
+            r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h}"
         elif fmt == StereoFormat.HALF_SBS:
             l_crop = f"crop=iw/2:ih:0:0,scale={target_w}:{target_h}"
             r_crop = f"crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h}"
         elif fmt == StereoFormat.FULL_TAB:
-            l_crop = "crop=iw:ih/2:0:0"
-            r_crop = "crop=iw:ih/2:0:ih/2"
+            l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h}"
+            r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h}"
         elif fmt == StereoFormat.HALF_TAB:
             l_crop = f"crop=iw:ih/2:0:0,scale={target_w}:{target_h}"
             r_crop = f"crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h}"

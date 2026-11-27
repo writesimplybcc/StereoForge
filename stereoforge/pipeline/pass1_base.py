@@ -82,6 +82,7 @@ class BaseViewEncoder:
             "-y",
             "-i", str(profile.path),
             "-vf", left_filter,
+            "-pix_fmt", "yuv420p",
             "-c:v", self.encoder,
             "-b:v", f"{bitrate_kbps}k",
         ]

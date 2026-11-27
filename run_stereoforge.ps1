@@ -20,6 +20,13 @@ if (-not (Get-Command $PythonExe -ErrorAction SilentlyContinue) -and -not (Test-
     exit 1
 }
 
+if (Test-Path "C:\Program Files\MKVToolNix") {
+    $env:PATH += ";C:\Program Files\MKVToolNix"
+}
+if (Test-Path "F:\TSMuxer") {
+    $env:PATH += ";F:\TSMuxer"
+}
+
 Write-Host "Checking dependencies..." -ForegroundColor Yellow
 $Check = & $PythonExe -c "import PySide6, numpy" 2>$null
 if ($LASTEXITCODE -ne 0) {

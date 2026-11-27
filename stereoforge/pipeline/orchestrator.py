@@ -29,7 +29,8 @@ class EncodeJob:
     split_ratio_base: float = 0.70  # 70% Base, 30% Dependent
     strict_bluray: bool = True
     swap_eyes: bool = False
-    title: str = "StereoForge 3D Feature"
+    title: Optional[str] = None
+    layout_override: Optional[StereoFormat] = None
 
 
 class StereoForgePipeline:
@@ -56,6 +57,9 @@ class StereoForgePipeline:
 
         report("Probing input media...", 0.05)
         profile = self.ingest.probe(job.input_file)
+        if job.layout_override and job.layout_override != StereoFormat.UNKNOWN:
+            profile.stereo_format = job.layout_override
+            report(f"Using 3D layout override: {job.layout_override.value}", 0.06)
 
         # Allocate bitrates
         total_kbps = job.target_bitrate_mbps * 1000
@@ -66,7 +70,9 @@ class StereoForgePipeline:
         temp_dir = Path(tempfile.mkdtemp(prefix="stereoforge_work_"))
         base_264 = temp_dir / "base_left.264"
         manifest_json = temp_dir / "frame_manifest.json"
-        dep_mvc = temp_dir / "dependent_right.mvc"
+        dep_264 = temp_dir / "dependent_right.264"
+        is_iso = job.output_file.suffix.lower() in (".iso", ".m2ts") or job.output_file.is_dir() or not job.output_file.suffix
+        dep_mvc = (temp_dir / "dependent_right.mvc") if is_iso else None
 
         try:
             # Stage 1: Pass 1 Base View (GPU)
@@ -80,24 +86,24 @@ class StereoForgePipeline:
                 swap_eyes=job.swap_eyes
             )
 
-            # Stage 2: Pass 2 Dependent View (CPU MVC)
-            report(f"Pass 2: Encoding Right Eye MVC ({dep_kbps} kbps on CPU)...", 0.50)
+            # Stage 2: Pass 2 Dependent View (CPU)
+            report(f"Pass 2: Encoding Right Eye ({dep_kbps} kbps on CPU)...", 0.50)
             success = self.dep_encoder.encode(
                 profile=profile,
                 base_bitstream_path=base_264,
                 manifest=manifest,
+                output_dependent_264=dep_264,
                 output_dependent_mvc=dep_mvc,
                 bitrate_kbps=dep_kbps,
-                swap_eyes=job.swap_eyes
+                swap_eyes=job.swap_eyes,
+                right_file=job.right_file
             )
 
             if not success:
-                report("Error: Pass 2 MVC encoding failed.", 0.75)
+                report("Error: Pass 2 encoding failed.", 0.75)
                 return False
 
             # Stage 3: Multiplexing
-            is_iso = job.output_file.suffix.lower() in (".iso", ".m2ts") or job.strict_bluray
-
             if is_iso:
                 report("Muxing: Generating 3D Blu-ray structure / ISO with tsMuxeR...", 0.85)
                 mux_success = self.muxer.mux_3d_bluray(
@@ -108,10 +114,10 @@ class StereoForgePipeline:
                     fps=str(round(profile.fps, 3))
                 )
             else:
-                report("Muxing: Packaging 3D MVC Matroska (.mkv) with mkvmerge...", 0.85)
+                report("Muxing: Packaging 3D stereoscopic Matroska (.mkv) with mkvmerge...", 0.85)
                 mux_success = self.muxer.mux_3d_mkv(
                     base_video_path=base_264,
-                    dependent_mvc_path=dep_mvc,
+                    dependent_video_path=dep_264,
                     output_mkv_path=job.output_file,
                     audio_source_path=job.input_file,
                     title=job.title
@@ -125,6 +131,9 @@ class StereoForgePipeline:
                 report("Multiplexing stage failed.", 0.95)
                 return False
 
+        except Exception as e:
+            report(f"Encode failed: {e}", 0.0)
+            return False
         finally:
             # Cleanup temp files
             if temp_dir.exists():

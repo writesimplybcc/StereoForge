@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.iso
+*.mkv
+*.264
+*.mvc
+.pytest_cache/
+*.meta
