@@ -163,7 +163,13 @@ class StereoForgePipeline:
                     cmd_mkv = [mkvmerge_bin, "-o", str(job.output_file)]
                     if job.title:
                         cmd_mkv.extend(["--title", job.title])
-                    cmd_mkv.extend(["--track-name", "0:3D MVC Video", str(interleaved_264)])
+                    fps_str = str(round(profile.fps, 3))
+                    cmd_mkv.extend([
+                        "--default-duration", f"0:{fps_str}fps",
+                        "--track-name", "0:3D MVC Video (Left 2D Base + Right MVC)",
+                        "--display-dimensions", "0:1920x1080",
+                        str(interleaved_264)
+                    ])
                     if job.input_file and job.input_file.exists():
                         cmd_mkv.extend(["-D", str(job.input_file)])
                     try:
