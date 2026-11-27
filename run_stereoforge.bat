@@ -9,41 +9,90 @@ echo   Imagined by writesimply.bcc * Coded by Gemini
 echo ===================================================
 echo.
 
+:: 1. Locate Python
 set "PYTHON=python"
 where %PYTHON% >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python was not found in your PATH.
-    echo Please install Python 3.10+ and add it to your system PATH.
+    where py >nul 2>&1
+    if not errorlevel 1 (
+        set "PYTHON=py -3"
+    ) else (
+        for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+            if exist "%%D\python.exe" set "PYTHON=%%D\python.exe"
+        )
+    )
+)
+
+where %PYTHON% >nul 2>&1
+if errorlevel 1 if not exist "%PYTHON%" (
+    echo [ERROR] Python 3.10+ was not found on your system.
+    echo Please install Python from https://www.python.org/ or run:
+    echo   winget install Python.Python.3.12
+    echo and ensure "Add python.exe to PATH" is checked.
+    echo.
     pause
     exit /b 1
 )
 
-if exist "C:\Program Files\MKVToolNix" (
-    set "PATH=%PATH%;C:\Program Files\MKVToolNix"
-)
-if exist "F:\TSMuxer" (
-    set "PATH=%PATH%;F:\TSMuxer"
+:: 2. Auto-detect MKVToolNix (mkvmerge)
+if exist "C:\Program Files\MKVToolNix" set "PATH=%PATH%;C:\Program Files\MKVToolNix"
+if exist "C:\Program Files (x86)\MKVToolNix" set "PATH=%PATH%;C:\Program Files (x86)\MKVToolNix"
+if exist "%LOCALAPPDATA%\Programs\MKVToolNix" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\MKVToolNix"
+if exist "%~dp0tools\MKVToolNix" set "PATH=%PATH%;%~dp0tools\MKVToolNix"
+if exist "%~dp0tools" set "PATH=%PATH%;%~dp0tools"
+if exist "%~dp0bin" set "PATH=%PATH%;%~dp0bin"
+
+:: 3. Auto-detect tsMuxeR
+if exist "%~dp0tools\tsMuxeR" set "PATH=%PATH%;%~dp0tools\tsMuxeR"
+if exist "C:\Program Files\tsMuxeR" set "PATH=%PATH%;C:\Program Files\tsMuxeR"
+if exist "C:\Program Files (x86)\tsMuxeR" set "PATH=%PATH%;C:\Program Files (x86)\tsMuxeR"
+if exist "C:\tsMuxeR" set "PATH=%PATH%;C:\tsMuxeR"
+if exist "D:\tsMuxeR" set "PATH=%PATH%;D:\tsMuxeR"
+if exist "F:\TSMuxer" set "PATH=%PATH%;F:\TSMuxer"
+if exist "%LOCALAPPDATA%\Programs\tsMuxeR" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\tsMuxeR"
+
+:: 4. Auto-detect FFmpeg
+if exist "C:\ffmpeg\bin" set "PATH=%PATH%;C:\ffmpeg\bin"
+if exist "C:\Program Files\ffmpeg\bin" set "PATH=%PATH%;C:\Program Files\ffmpeg\bin"
+if exist "%LOCALAPPDATA%\Programs\ffmpeg\bin" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\ffmpeg\bin"
+if exist "%~dp0tools\ffmpeg\bin" set "PATH=%PATH%;%~dp0tools\ffmpeg\bin"
+
+:: 5. Dependency presence check
+where ffmpeg >nul 2>&1
+if errorlevel 1 (
+    echo [WARNING] FFmpeg was not detected in PATH or C:\ffmpeg\bin.
+    echo   StereoForge requires FFmpeg. You can easily install it via PowerShell:
+    echo     winget install Gyan.FFmpeg
+    echo.
 )
 
-echo Checking dependencies...
-"%PYTHON%" -c "import PySide6, numpy" >nul 2>&1
+where mkvmerge >nul 2>&1
+if errorlevel 1 (
+    echo [NOTE] MKVToolNix (mkvmerge) was not detected.
+    echo   Needed for 3D MVC Matroska (.mkv) packaging. Install via:
+    echo     winget install MKVToolNix.MKVToolNix
+    echo.
+)
+
+:: 6. Python packages check
+echo Checking Python dependencies...
+%PYTHON% -c "import PySide6, numpy" >nul 2>&1
 if errorlevel 1 (
     echo Dependencies not found. Installing from requirements.txt...
-    "%PYTHON%" -m pip install -r requirements.txt
+    %PYTHON% -m pip install -r requirements.txt
     if errorlevel 1 (
-        echo [ERROR] Failed to install dependencies.
+        echo [ERROR] Failed to install Python dependencies.
         pause
         exit /b 1
     )
 )
 
+:: 7. Launch StereoForge
 echo Launching StereoForge GUI...
 set "PYTHONPATH=%~dp0"
-"%PYTHON%" -m stereoforge.ui.app
+%PYTHON% -m stereoforge.ui.app
 if errorlevel 1 (
     echo.
     echo [ERROR] Application exited with error.
     pause
 )
-
-

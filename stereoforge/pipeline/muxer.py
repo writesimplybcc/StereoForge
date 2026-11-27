@@ -16,10 +16,16 @@ def find_mkvmerge(preferred: Optional[str] = None) -> str:
         return preferred
     if shutil.which("mkvmerge"):
         return "mkvmerge"
+    repo_root = Path(__file__).resolve().parents[2]
     candidates = [
+        repo_root / "tools" / "mkvmerge.exe",
+        repo_root / "bin" / "mkvmerge.exe",
+        repo_root / "mkvmerge.exe",
         Path(r"C:\Program Files\MKVToolNix\mkvmerge.exe"),
         Path(r"C:\Program Files (x86)\MKVToolNix\mkvmerge.exe"),
-        Path.home() / "AppData" / "Local" / "Programs" / "MKVToolNix" / "mkvmerge.exe"
+        Path.home() / "AppData" / "Local" / "Programs" / "MKVToolNix" / "mkvmerge.exe",
+        Path(r"C:\ProgramData\chocolatey\bin\mkvmerge.exe"),
+        Path.home() / "scoop" / "apps" / "mkvtoolnix" / "current" / "mkvmerge.exe",
     ]
     for p in candidates:
         if p.exists():
@@ -32,11 +38,21 @@ def find_tsmuxer(preferred: Optional[str] = None) -> str:
         return preferred
     if shutil.which("tsMuxeR"):
         return "tsMuxeR"
+    if shutil.which("tsmuxer"):
+        return "tsmuxer"
+    repo_root = Path(__file__).resolve().parents[2]
     candidates = [
-        Path(r"F:\TSMuxer\tsMuxeR.exe"),
+        repo_root / "tools" / "tsMuxeR.exe",
+        repo_root / "bin" / "tsMuxeR.exe",
+        repo_root / "tsMuxeR.exe",
         Path(r"C:\Program Files\tsMuxeR\tsMuxeR.exe"),
         Path(r"C:\Program Files (x86)\tsMuxeR\tsMuxeR.exe"),
-        Path.home() / "AppData" / "Local" / "Programs" / "tsMuxeR" / "tsMuxeR.exe"
+        Path(r"C:\tsMuxeR\tsMuxeR.exe"),
+        Path(r"D:\tsMuxeR\tsMuxeR.exe"),
+        Path(r"F:\TSMuxer\tsMuxeR.exe"),
+        Path.home() / "AppData" / "Local" / "Programs" / "tsMuxeR" / "tsMuxeR.exe",
+        Path(r"C:\ProgramData\chocolatey\bin\tsMuxeR.exe"),
+        Path.home() / "scoop" / "apps" / "tsmuxer" / "current" / "tsMuxeR.exe",
     ]
     for p in candidates:
         if p.exists():
@@ -197,7 +213,8 @@ class MuxerEngine:
         if not self.is_tsmuxer_available():
             raise FileNotFoundError(
                 "tsMuxeR is required to author 3D Blu-ray ISOs, but was not found. "
-                "Please download tsMuxeR and place it in your system PATH or F:\\TSMuxer."
+                "Please download tsMuxeR (https://github.com/justdan96/tsMuxer) and place tsMuxeR.exe "
+                "in your system PATH, C:\\tsMuxeR, or StereoForge\\tools folder."
             )
         # tsMuxeR uses --blu-ray for both folder structures and .iso disk images
         meta_lines = ["MUXOPT --blu-ray --no-pcr-on-video-pid --new-audio-pes --vbr --auto-chapters=5"]
