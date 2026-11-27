@@ -21,6 +21,17 @@ def find_mkvmerge(preferred: Optional[str] = None) -> str:
         repo_root / "tools" / "mkvmerge.exe",
         repo_root / "bin" / "mkvmerge.exe",
         repo_root / "mkvmerge.exe",
+        repo_root / "tools" / "mkvmerge",
+        repo_root / "bin" / "mkvmerge",
+        repo_root / "mkvmerge",
+        # macOS paths (Apple Silicon & Intel Homebrew / MacPorts)
+        Path("/opt/homebrew/bin/mkvmerge"),
+        Path("/usr/local/bin/mkvmerge"),
+        Path("/opt/local/bin/mkvmerge"),
+        # Linux standard system paths
+        Path("/usr/bin/mkvmerge"),
+        Path("/bin/mkvmerge"),
+        # Windows standard locations
         Path(r"C:\Program Files\MKVToolNix\mkvmerge.exe"),
         Path(r"C:\Program Files (x86)\MKVToolNix\mkvmerge.exe"),
         Path.home() / "AppData" / "Local" / "Programs" / "MKVToolNix" / "mkvmerge.exe",
@@ -45,6 +56,17 @@ def find_tsmuxer(preferred: Optional[str] = None) -> str:
         repo_root / "tools" / "tsMuxeR.exe",
         repo_root / "bin" / "tsMuxeR.exe",
         repo_root / "tsMuxeR.exe",
+        repo_root / "tools" / "tsMuxeR",
+        repo_root / "bin" / "tsMuxeR",
+        repo_root / "tsMuxeR",
+        # macOS paths (Homebrew / local)
+        Path("/opt/homebrew/bin/tsMuxeR"),
+        Path("/usr/local/bin/tsMuxeR"),
+        Path("/Applications/tsMuxeR.app/Contents/MacOS/tsMuxeR"),
+        # Linux standard system paths
+        Path("/usr/local/bin/tsMuxeR"),
+        Path("/usr/bin/tsMuxeR"),
+        # Windows standard locations
         Path(r"C:\Program Files\tsMuxeR\tsMuxeR.exe"),
         Path(r"C:\Program Files (x86)\tsMuxeR\tsMuxeR.exe"),
         Path(r"C:\tsMuxeR\tsMuxeR.exe"),

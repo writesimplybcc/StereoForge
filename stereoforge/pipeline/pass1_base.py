@@ -30,17 +30,26 @@ def detect_best_h264_encoder(ffmpeg_bin: str = "ffmpeg") -> str:
     except Exception:
         return "libx264"
 
-    # Priority order: Nvidia NVENC -> Intel QSV -> Apple VideoToolbox -> AMD AMF -> libx264
+    # Priority order:
+    # 1. Nvidia NVENC (Windows / Linux x86_64)
+    # 2. Apple VideoToolbox (macOS Apple Silicon M1-M4 & Intel)
+    # 3. Intel QuickSync / QSV (Windows / Linux)
+    # 4. AMD AMF (Windows / Linux)
+    # 5. VAAPI (Linux x86_64 / Linux ARM64)
+    # 6. Windows MediaFoundation (Windows ARM64 / Windows x64)
+    # 7. CPU fallback: libx264 (universal, AVX2/AVX-512/ARM NEON)
     if "h264_nvenc" in out:
         return "h264_nvenc"
-    if "h264_qsv" in out:
-        return "h264_qsv"
     if "h264_videotoolbox" in out:
         return "h264_videotoolbox"
+    if "h264_qsv" in out:
+        return "h264_qsv"
     if "h264_amf" in out:
         return "h264_amf"
     if "h264_vaapi" in out:
         return "h264_vaapi"
+    if "h264_mf" in out:
+        return "h264_mf"
     return "libx264"
 
 

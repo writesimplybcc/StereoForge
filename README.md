@@ -20,23 +20,38 @@ StereoForge converts 3D videos (Side-by-Side, Top-and-Bottom, dual-camera files,
    ```
 
 2. **Launch StereoForge:**
-   * Simply double-click **`run_stereoforge.bat`** (or execute `.\run_stereoforge.ps1` in PowerShell).
+   * **Windows (x64 / ARM64):** Double-click **`run_stereoforge.bat`** (or run `.\run_stereoforge.ps1` in PowerShell).
+   * **macOS (Apple Silicon & Intel) / Linux:** Run `chmod +x run_stereoforge.sh && ./run_stereoforge.sh` in Terminal.
    * The launcher automatically locates Python, installs missing Python dependencies from `requirements.txt`, auto-detects FFmpeg/MKVToolNix/tsMuxeR, and opens the GUI.
+
+---
+
+## Cross-Platform Compatibility Matrix
+
+StereoForge is built on pure Python + Qt 6 (PySide6) and standard multimedia backends, providing first-class cross-platform support:
+
+| Operating System | Architecture | Pass 1 Hardware Acceleration | Pass 2 CPU MVC Engine | Launcher |
+| :--- | :--- | :--- | :--- | :--- |
+| **Windows 10 / 11** | `x86_64` | Nvidia NVENC, Intel QSV, AMD AMF | Multi-core x264 (AVX2 / AVX-512) | `run_stereoforge.bat` |
+| **Windows 11 on ARM** | `arm64` (Snapdragon X Elite) | Windows Media Foundation (`h264_mf`) / CPU | Multi-core x264 (ARM NEON) | `run_stereoforge.bat` |
+| **macOS (Apple Silicon)** | `arm64` (M1, M2, M3, M4) | Apple VideoToolbox (`h264_videotoolbox`) | Multi-core x264 (ARM NEON) | `run_stereoforge.sh` |
+| **macOS (Intel)** | `x86_64` | Apple VideoToolbox / Intel QSV | Multi-core x264 (AVX2) | `run_stereoforge.sh` |
+| **Linux (Ubuntu/Fedora/Arch)** | `x86_64` & `aarch64` | Nvidia NVENC, Intel QSV, VAAPI | Multi-core x264 (AVX2 / NEON) | `run_stereoforge.sh` |
 
 ---
 
 ## Prerequisites & External Tools
 
-StereoForge relies on a few standard tools for hardware encoding, container packaging, and disc authoring:
+StereoForge relies on standard tools for hardware encoding, container packaging, and disc authoring:
 
-| Tool | Purpose | Quick Installation (Windows PowerShell) |
-| :--- | :--- | :--- |
-| **Python 3.10+** | Core runtime | `winget install Python.Python.3.12` |
-| **FFmpeg** | Video decode, encode & preview | `winget install Gyan.FFmpeg` |
-| **MKVToolNix** | 3D MVC Matroska (.mkv) packaging | `winget install MKVToolNix.MKVToolNix` |
-| **tsMuxeR** *(Optional)* | 3D Blu-ray ISO / BDMV authoring | Download from [tsMuxer GitHub](https://github.com/justdan96/tsMuxer) and place `tsMuxeR.exe` in `StereoForge/tools` or system PATH |
+| Tool | Windows (PowerShell) | macOS (Homebrew) | Linux (Ubuntu / Debian) |
+| :--- | :--- | :--- | :--- |
+| **Python 3.10+** | `winget install Python.Python.3.12` | `brew install python` | `sudo apt install python3 python3-pip` |
+| **FFmpeg** | `winget install Gyan.FFmpeg` | `brew install ffmpeg` | `sudo apt install ffmpeg` |
+| **MKVToolNix** | `winget install MKVToolNix.MKVToolNix` | `brew install mkvtoolnix` | `sudo apt install mkvtoolnix` |
+| **tsMuxeR** *(Optional for Blu-ray ISO)* | Download from [tsMuxer GitHub](https://github.com/justdan96/tsMuxer) | Download macOS build / drop in `tools/` | Download Linux build / drop in `tools/` |
 
-> **Note on Tool Discovery:** StereoForge automatically scans standard directories (including `C:\Program Files\MKVToolNix`, `C:\ffmpeg\bin`, `StereoForge\tools\`, `StereoForge\bin\`, and system `PATH`). You do not need to manually configure environment variables if tools are installed in their standard locations.
+> **Note on Tool Discovery:** StereoForge automatically scans standard directories across all operating systems (including `C:\Program Files\MKVToolNix`, `C:\ffmpeg\bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `StereoForge/tools/`, and system `PATH`). You do not need to manually configure environment variables if tools are installed in their standard locations.
 
 ---
 
