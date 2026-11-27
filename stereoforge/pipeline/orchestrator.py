@@ -198,6 +198,30 @@ class StereoForgePipeline:
 
             elapsed = time.time() - start_time
             if mux_success:
+                base_sz = base_264.stat().st_size if base_264.exists() else 0
+                dep_sz = 0
+                if dep_mvc and dep_mvc.exists():
+                    dep_sz = dep_mvc.stat().st_size
+                elif dep_264 and dep_264.exists():
+                    dep_sz = dep_264.stat().st_size
+                out_sz = job.output_file.stat().st_size if job.output_file.exists() else 0
+
+                dur = profile.duration if profile.duration > 0 else 1.0
+                base_mb = base_sz / (1024 * 1024)
+                dep_mb = dep_sz / (1024 * 1024)
+                out_mb = out_sz / (1024 * 1024)
+                base_mbps = (base_sz * 8) / (dur * 1000 * 1000)
+                dep_mbps = (dep_sz * 8) / (dur * 1000 * 1000)
+                dep_ratio = (dep_sz / base_sz * 100.0) if base_sz > 0 else 0.0
+
+                report("------------------- 📊 STEREOFORGE DATA BREAKDOWN -------------------", 0.98)
+                report(f"  👁️  Left Eye  (Base 2D View):     {base_mb:6.2f} MB  ({base_mbps:5.2f} Mbps)", 0.985)
+                report(f"  👁️  Right Eye (Dependent MVC):    {dep_mb:6.2f} MB  ({dep_mbps:5.2f} Mbps | {dep_ratio:.1f}% of base)", 0.99)
+                if dep_ratio < 70.0:
+                    savings = (1.0 - dep_sz / base_sz) * 100.0
+                    report(f"  ✨ True MVC Inter-View Savings:   {savings:.1f}% space saved on Dependent View!", 0.995)
+                report(f"  📦 Finished Output ({job.output_file.suffix}):   {out_mb:6.2f} MB", 0.998)
+                report("---------------------------------------------------------------------", 0.999)
                 report(f"Finished successfully in {elapsed:.1f} seconds! Output: {job.output_file}", 1.0)
                 return True
             else:
