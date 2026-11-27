@@ -34,9 +34,14 @@ def get_anaglyph_filter_config(
     actual_mode = mode
     effective_swap = swap_eyes
 
-    # Magenta/Green Trioscopic: invert inputs into Green/Magenta filter
+    # Invert inputs for complementary-reversed eyewear:
+    # mgmd: Magenta Left / Green Right (inverted agmd)
+    # bybd: Blue Left / Amber Right (inverted aybd)
     if mode == "mgmd":
         actual_mode = "agmd"
+        effective_swap = not swap_eyes
+    elif mode == "bybd":
+        actual_mode = "aybd"
         effective_swap = not swap_eyes
 
     if is_dual:
@@ -312,9 +317,10 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
             ("🔴🔵 Red / Cyan (Dubois Color - Recommended)", "arcd"),
             ("🔴🔵 Red / Cyan (Standard Full Color)", "arcc"),
             ("🔴🔵 Red / Cyan (Half Color)", "arch"),
-            ("🟢🟣 Green / Magenta (Trioscopic: Green Left / Magenta Right)", "agmd"),
             ("🟣🟢 Magenta / Green (Trioscopic: Magenta Left / Green Right)", "mgmd"),
-            ("🟡🔵 Amber / Blue (ColorCode 3D)", "aybd"),
+            ("🟢🟣 Green / Magenta (Trioscopic: Green Left / Magenta Right)", "agmd"),
+            ("🔵🟡 Blue / Amber (ColorCode: Blue Left / Amber Right)", "bybd"),
+            ("🟡🔵 Amber / Blue (ColorCode: Amber Left / Blue Right)", "aybd"),
             ("👁️ Left Eye Only (2D Base)", "ml"),
             ("👁️ Right Eye Only (2D Dependent)", "mr")
         ]
@@ -348,8 +354,9 @@ class AnaglyphPreviewDialog(QDialog if HAS_PYSIDE6 else object):
         g_text = QLabel(
             "<b>How to verify 3D Orientation:</b> Put on your 3D glasses (e.g. Red on Left Eye for Red/Cyan). "
             "Foreground elements should naturally pop out with depth. "
-            "If objects feel inverted or sink inward, click <b>'🔄 Swap Left/Right Eyes'</b>.<br/>"
-            "<i>Note on Trioscopic:</i> Standard Trioscopic uses Green on Left / Magenta on Right. If your glasses have Magenta on the Left, select <b>'Magenta / Green'</b> or click <b>Swap</b>."
+            "If objects feel inverted or sink inward (pseudoscopic), click <b>'🔄 Swap Left/Right Eyes'</b>.<br/>"
+            "<i>Eyewear Orientations:</i> If using Magenta/Green glasses, select <b>'Magenta / Green'</b>. "
+            "If using ColorCode glasses with Blue on the left, select <b>'Blue / Amber'</b>."
         )
         g_text.setWordWrap(True)
         g_text.setStyleSheet("font-size: 11px; color: #CBD5E1;")
