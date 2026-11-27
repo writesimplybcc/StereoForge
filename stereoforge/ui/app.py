@@ -23,6 +23,7 @@ except ImportError:
 from stereoforge import __version__
 from stereoforge.pipeline.orchestrator import StereoForgePipeline, EncodeJob
 from stereoforge.pipeline.ingest import IngestionEngine, StereoFormat, find_matching_eye_file
+from stereoforge.ui.preview import AnaglyphPreviewDialog
 
 
 THEMES: Dict[str, Dict[str, str]] = {
@@ -279,6 +280,14 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         ])
         layout_row.addWidget(self.layout_combo, stretch=1)
         drop_layout.addLayout(layout_row)
+
+        preview_row = QHBoxLayout()
+        self.preview_btn = QPushButton("👓 Preview 3D Anaglyph (Check Eye Orientation)")
+        self.preview_btn.setFixedHeight(34)
+        self.preview_btn.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        self.preview_btn.clicked.connect(self.open_anaglyph_preview)
+        preview_row.addWidget(self.preview_btn)
+        drop_layout.addLayout(preview_row)
 
         left_layout.addWidget(drop_box)
 
@@ -622,6 +631,49 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             self.right_file_label.setText(f"Right: {self.right_file.name}")
             self.layout_combo.setCurrentIndex(3)
             self.log(f"Selected Right Eye video: {self.right_file}")
+
+    def open_anaglyph_preview(self):
+        if not self.input_file or not self.input_file.exists():
+            self.log("⚠️ Please select an input 3D video file first.")
+            return
+
+        layout_idx = self.layout_combo.currentIndex()
+        fmt = StereoFormat.HALF_SBS
+        if layout_idx == 1:
+            fmt = StereoFormat.HALF_SBS
+        elif layout_idx == 2:
+            fmt = StereoFormat.HALF_TAB
+        elif layout_idx == 3:
+            fmt = StereoFormat.DUAL_FILES
+        else:
+            try:
+                profile = IngestionEngine().probe(self.input_file)
+                fmt = profile.stereo_format
+            except Exception:
+                fmt = StereoFormat.HALF_SBS
+
+        try:
+            profile = IngestionEngine().probe(self.input_file)
+            duration = profile.duration
+        except Exception:
+            duration = 60.0
+
+        dialog = AnaglyphPreviewDialog(
+            parent=self,
+            input_file=self.input_file,
+            right_file=self.right_file,
+            format_type=fmt,
+            swap_eyes=self.swap_eyes_cb.isChecked(),
+            duration=duration
+        )
+
+        if dialog.exec():
+            # Sync swap eyes checkbox if user changed orientation in preview
+            self.swap_eyes_cb.setChecked(dialog.swap_eyes)
+            if dialog.swap_eyes:
+                self.log("🔄 Eye orientation set to: SWAPPED (Left/Right Inverted)")
+            else:
+                self.log("👁️ Eye orientation set to: STANDARD (Normal Left/Right)")
 
     def on_output_format_changed(self, index: int):
         cur_text = self.output_path_edit.text().strip()

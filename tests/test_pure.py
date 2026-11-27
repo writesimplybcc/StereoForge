@@ -169,6 +169,25 @@ def test_dual_files_matching():
         assert matched.name == "MyFeature_Right.mp4"
 
 
+def test_anaglyph_filter_generation():
+    from stereoforge.ui.preview import get_anaglyph_filter_config
+    from stereoforge.pipeline.ingest import StereoFormat
+
+    f_sbs, is_c = get_anaglyph_filter_config(StereoFormat.HALF_SBS, swap_eyes=False)
+    assert not is_c
+    assert "stereo3d=sbs2l:arcd" in f_sbs
+
+    f_sbs_swap, _ = get_anaglyph_filter_config(StereoFormat.HALF_SBS, swap_eyes=True)
+    assert "stereo3d=sbs2r:arcd" in f_sbs_swap
+
+    f_tab, _ = get_anaglyph_filter_config(StereoFormat.HALF_TAB, swap_eyes=False)
+    assert "stereo3d=ab2l:arcd" in f_tab
+
+    f_dual, is_c2 = get_anaglyph_filter_config(StereoFormat.DUAL_FILES, swap_eyes=False, is_dual=True)
+    assert is_c2
+    assert "hstack" in f_dual
+
+
 if __name__ == "__main__":
     test_frame_manifest_serialization()
     test_mvc_nal_header_packing()
@@ -176,4 +195,5 @@ if __name__ == "__main__":
     test_interleave_mvc_streams()
     test_encode_job_title_optional()
     test_dual_files_matching()
+    test_anaglyph_filter_generation()
     print("ALL PURE PYTHON TESTS PASSED!")
