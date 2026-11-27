@@ -26,6 +26,64 @@ from stereoforge.pipeline.ingest import IngestionEngine, StereoFormat, find_matc
 
 
 THEMES: Dict[str, Dict[str, str]] = {
+    # Light Themes (4 Options)
+    "☀️ Clean Light": {
+        "bg": "#F8FAFC",
+        "card_bg": "#FFFFFF",
+        "input_bg": "#F1F5F9",
+        "border": "#CBD5E1",
+        "accent": "#0284C7",
+        "accent_hover": "#0369A1",
+        "text": "#0F172A",
+        "text_dim": "#64748B",
+        "header_color": "#0284C7",
+        "btn_text": "#FFFFFF",
+        "console_bg": "#0F172A",
+        "console_text": "#38BDF8",
+    },
+    "🏛️ Nordic Frost": {
+        "bg": "#EDF2F7",
+        "card_bg": "#FFFFFF",
+        "input_bg": "#E2E8F0",
+        "border": "#CBD5E0",
+        "accent": "#3182CE",
+        "accent_hover": "#2B6CB0",
+        "text": "#1A202C",
+        "text_dim": "#718096",
+        "header_color": "#2B6CB0",
+        "btn_text": "#FFFFFF",
+        "console_bg": "#1A202C",
+        "console_text": "#63B3ED",
+    },
+    "🌅 Warm Sandstone": {
+        "bg": "#FAF7F2",
+        "card_bg": "#FFFFFF",
+        "input_bg": "#F3EFE6",
+        "border": "#E6DFD3",
+        "accent": "#D97706",
+        "accent_hover": "#B45309",
+        "text": "#292524",
+        "text_dim": "#78716C",
+        "header_color": "#B45309",
+        "btn_text": "#FFFFFF",
+        "console_bg": "#292524",
+        "console_text": "#FBBF24",
+    },
+    "🌿 Mint Paper": {
+        "bg": "#F2F9F5",
+        "card_bg": "#FFFFFF",
+        "input_bg": "#E6F4EC",
+        "border": "#CCE7D8",
+        "accent": "#059669",
+        "accent_hover": "#047857",
+        "text": "#064E3B",
+        "text_dim": "#4B7B6B",
+        "header_color": "#047857",
+        "btn_text": "#FFFFFF",
+        "console_bg": "#064E3B",
+        "console_text": "#34D399",
+    },
+    # Dark Themes (4 Options)
     "🌌 Cyber Neon": {
         "bg": "#0B132B",
         "card_bg": "#141D38",
@@ -66,20 +124,6 @@ THEMES: Dict[str, Dict[str, str]] = {
         "header_color": "#38BDF8",
         "btn_text": "#000000",
         "console_bg": "#080808",
-        "console_text": "#38BDF8",
-    },
-    "☀️ Clean Light": {
-        "bg": "#F8FAFC",
-        "card_bg": "#FFFFFF",
-        "input_bg": "#F1F5F9",
-        "border": "#CBD5E1",
-        "accent": "#0284C7",
-        "accent_hover": "#0369A1",
-        "text": "#0F172A",
-        "text_dim": "#64748B",
-        "header_color": "#0284C7",
-        "btn_text": "#FFFFFF",
-        "console_bg": "#0F172A",
         "console_text": "#38BDF8",
     },
     "⚡ Obsidian Amber": {
@@ -145,14 +189,14 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         self.init_ui()
 
-        # Load persisted theme
-        saved_theme = self.settings.value("theme", "🌌 Cyber Neon")
+        # Load persisted theme (Default: ☀️ Clean Light)
+        saved_theme = self.settings.value("theme", "☀️ Clean Light")
         if saved_theme in THEMES:
             idx = list(THEMES.keys()).index(saved_theme)
             self.theme_combo.setCurrentIndex(idx)
             self.apply_theme(saved_theme)
         else:
-            self.apply_theme("🌌 Cyber Neon")
+            self.apply_theme("☀️ Clean Light")
 
     def init_ui(self):
         main_widget = QWidget()
@@ -390,8 +434,8 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         self.settings.setValue("theme", theme_name)
         self.apply_theme(theme_name)
 
-    def apply_theme(self, theme_name: str = "🌌 Cyber Neon"):
-        theme = THEMES.get(theme_name, THEMES["🌌 Cyber Neon"])
+    def apply_theme(self, theme_name: str = "☀️ Clean Light"):
+        theme = THEMES.get(theme_name, THEMES["☀️ Clean Light"])
 
         self.header_label.setStyleSheet(f"color: {theme['header_color']}; margin: 0;")
         self.subhead_label.setStyleSheet(f"color: {theme['text_dim']}; margin-bottom: 2px;")
