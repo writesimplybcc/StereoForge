@@ -371,10 +371,13 @@ class MuxerEngine:
                         temp_audio_files.append(temp_file)
                         a_str = str(temp_file).replace("\\", "/")
                         meta_lines.append(f'A_EAC3, "{a_str}"{lang_param}')
-                    elif codec in ("pcm_s16le", "pcm_s24le", "pcm_bluray", "pcm_s32le", "wav"):
+                    elif codec in ("flac", "pcm_s16le", "pcm_s24le", "pcm_bluray", "pcm_s32le", "wav"):
                         temp_file = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.wav"
+                        # Blu-ray LPCM standard strictly requires 48kHz, 96kHz, or 192kHz sample rates
+                        sr = a_info.get("sample_rate")
+                        ar_args = ["-ar", "48000"] if (not sr or int(sr) not in (48000, 96000, 192000)) else []
                         subprocess.run(
-                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "pcm_s16le", str(temp_file)],
+                            ["ffmpeg", "-y", "-i", str(audio_source_path), "-map", f"0:a:{a_idx}", "-c:a", "pcm_s16le"] + ar_args + [str(temp_file)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
                         )
                         temp_audio_files.append(temp_file)
