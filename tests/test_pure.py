@@ -263,6 +263,77 @@ def test_dependent_view_encoder_gpu():
     assert encoder.encoder == "h264_nvenc"
 
 
+def test_bitstream_reader_writer_roundtrip():
+    from stereoforge.core.mvc_syntax import BitstreamWriter, BitstreamReader
+
+    w = BitstreamWriter()
+    w.write_bits(0b1011, 4)
+    w.write_ue(0)
+    w.write_ue(1)
+    w.write_ue(15)
+    w.write_se(0)
+    w.write_se(-3)
+    w.write_se(4)
+    w.write_trailing_bits()
+
+    rbsp = w.get_rbsp()
+    r = BitstreamReader(rbsp)
+
+    assert r.read_bits(4) == 0b1011
+    assert r.read_ue() == 0
+    assert r.read_ue() == 1
+    assert r.read_ue() == 15
+    assert r.read_se() == 0
+    assert r.read_se() == -3
+    assert r.read_se() == 4
+
+
+def test_subset_sps_generation():
+    from stereoforge.core.mvc_syntax import MVCSubsetSPS
+
+    subset_sps = MVCSubsetSPS.generate(width=1920, height=1080, sps_id=0, level_idc=41)
+    assert subset_sps.startswith(b"\x00\x00\x00\x01")
+    nal_header = subset_sps[4]
+    nal_type = nal_header & 0x1F
+    nal_ref = (nal_header >> 5) & 0x03
+    assert nal_type == 15  # NAL_SUBSET_SPS
+    assert nal_ref == 3    # Highest priority parameter set
+    assert len(subset_sps) > 10
+
+
+def test_prefix_nal_generation():
+    from stereoforge.core.mvc_syntax import PrefixNAL
+
+    prefix = PrefixNAL.generate(priority_id=0, temporal_id=0)
+    assert prefix.startswith(b"\x00\x00\x00\x01")
+    nal_header = prefix[4]
+    nal_type = nal_header & 0x1F
+    assert nal_type == 14  # NAL_PREFIX
+
+
+def test_inter_view_disparity_analysis():
+    import numpy as np
+    from stereoforge.core.inter_view import InterViewDisparityAnalyzer
+
+    # Generate synthetic stereoscopic test pattern (H=120, W=160)
+    # Left eye: circle at center (x=80)
+    # Right eye: circle shifted horizontally by 10 pixels (x=70)
+    left = np.zeros((120, 160, 3), dtype=np.uint8)
+    right = np.zeros((120, 160, 3), dtype=np.uint8)
+
+    y, x = np.ogrid[:120, :160]
+    mask_left = (x - 80) ** 2 + (y - 60) ** 2 < 25 ** 2
+    mask_right = (x - 70) ** 2 + (y - 60) ** 2 < 25 ** 2
+
+    left[mask_left] = [200, 200, 200]
+    right[mask_right] = [200, 200, 200]
+
+    metrics = InterViewDisparityAnalyzer.analyze_pair(left, right)
+    assert metrics.is_valid_3d is True
+    assert metrics.mean_disparity >= 0.0
+    assert metrics.estimated_bitrate_saving_pct >= 15.0
+
+
 if __name__ == "__main__":
     test_frame_manifest_serialization()
     test_mvc_nal_header_packing()
@@ -274,4 +345,8 @@ if __name__ == "__main__":
     test_h264_encoder_options_tuning()
     test_wrap_mvc_stream_chunked()
     test_dependent_view_encoder_gpu()
+    test_bitstream_reader_writer_roundtrip()
+    test_subset_sps_generation()
+    test_prefix_nal_generation()
+    test_inter_view_disparity_analysis()
     print("ALL PURE PYTHON TESTS PASSED!")

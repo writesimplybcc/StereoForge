@@ -19,3 +19,14 @@ __pycache__/
 *.ssif
 *.avi
 *.yuv
+
+# C/C++ CMake build artifacts
+build/
+*.obj
+*.lib
+*.exp
+*.dll
+*.pdb
+*.exe
+.vs/
+*.vcxproj*
