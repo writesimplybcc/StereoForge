@@ -7,3 +7,15 @@ __pycache__/
 *.mvc
 .pytest_cache/
 *.meta
+
+# Test media and Clips folders (never upload)
+[Cc]lip/
+[Cc]lips/
+*.mp4
+*.m4v
+*.mov
+*.ts
+*.m2ts
+*.ssif
+*.avi
+*.yuv
