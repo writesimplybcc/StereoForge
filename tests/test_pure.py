@@ -200,6 +200,69 @@ def test_anaglyph_filter_generation():
     assert "stereo3d=sbs2l:aybd" in f_aybd
 
 
+def test_h264_encoder_options_tuning():
+    from stereoforge.pipeline.pass1_base import get_h264_encoder_options
+
+    nvenc_args = get_h264_encoder_options("h264_nvenc", 20000, strict_bluray=True)
+    assert "-c:v" in nvenc_args
+    assert "h264_nvenc" in nvenc_args
+    assert "-b:v" in nvenc_args
+    assert "20000k" in nvenc_args
+    assert "-preset" in nvenc_args
+    assert "p4" in nvenc_args
+    assert "-level:v" in nvenc_args
+    assert "4.1" in nvenc_args
+
+    x264_args = get_h264_encoder_options("libx264", 15000, strict_bluray=False)
+    assert "-c:v" in x264_args
+    assert "libx264" in x264_args
+    assert "-preset" in x264_args
+    assert "fast" in x264_args
+    assert "-level:v" not in x264_args
+
+
+def test_wrap_mvc_stream_chunked():
+    from stereoforge.pipeline.pass2_dependent import DependentViewEncoder
+    from stereoforge.core.manifest import FrameManifest, StreamMetadata
+
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td)
+        in_264 = p / "input.264"
+        out_mvc = p / "output.mvc"
+
+        # Create sample NAL sequence: SPS (7), PPS (8), IDR (5), Slice (1)
+        test_stream = (
+            b"\x00\x00\x00\x01\x67\x42\x00\x1e"          # SPS
+            b"\x00\x00\x01\x68\xce\x3c\x80"              # PPS
+            b"\x00\x00\x00\x01\x65\x88\x80\x01\x02\x03"  # IDR
+            b"\x00\x00\x01\x21\x9a\x01\x04\x05\x06"      # Non-IDR Slice
+        )
+        in_264.write_bytes(test_stream)
+
+        encoder = DependentViewEncoder()
+        # Test with tiny chunk_size to rigorously test boundary conditions
+        success = encoder._wrap_mvc_stream(in_264, out_mvc, chunk_size=8)
+        assert success
+        assert out_mvc.exists()
+
+        data = out_mvc.read_bytes()
+        # Verify SPS and PPS were written unmodified
+        assert b"\x67\x42\x00\x1e" in data
+        assert b"\x68\xce\x3c\x80" in data
+        # Check that NAL 20 (Coded Slice Extension) is present in data
+        # For non-anchor (Type 1 with ref_idc=1): (1 << 5) | 20 = 0x34
+        # For anchor (Type 5 with ref_idc=3): (3 << 5) | 20 = 0x74
+        assert b"\x74" in data
+        assert b"\x34" in data
+
+
+def test_dependent_view_encoder_gpu():
+    from stereoforge.pipeline.pass2_dependent import DependentViewEncoder
+
+    encoder = DependentViewEncoder(encoder="h264_nvenc")
+    assert encoder.encoder == "h264_nvenc"
+
+
 if __name__ == "__main__":
     test_frame_manifest_serialization()
     test_mvc_nal_header_packing()
@@ -208,4 +271,7 @@ if __name__ == "__main__":
     test_encode_job_title_optional()
     test_dual_files_matching()
     test_anaglyph_filter_generation()
+    test_h264_encoder_options_tuning()
+    test_wrap_mvc_stream_chunked()
+    test_dependent_view_encoder_gpu()
     print("ALL PURE PYTHON TESTS PASSED!")

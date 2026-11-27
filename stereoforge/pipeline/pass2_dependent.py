@@ -18,13 +18,15 @@ from stereoforge.core.mvc_syntax import (
     MVCBitstreamHeader
 )
 from stereoforge.pipeline.ingest import MediaProfile, IngestionEngine
+from stereoforge.pipeline.pass1_base import detect_best_h264_encoder, get_h264_encoder_options
 
 
 class DependentViewEncoder:
     """Manages Pass 2 MVC encoding slaved to the base view manifest."""
 
-    def __init__(self, ffmpeg_bin: str = "ffmpeg"):
+    def __init__(self, ffmpeg_bin: str = "ffmpeg", encoder: Optional[str] = None):
         self.ffmpeg_bin = ffmpeg_bin
+        self.encoder = encoder or detect_best_h264_encoder(ffmpeg_bin)
 
     def encode(
         self,
@@ -34,6 +36,7 @@ class DependentViewEncoder:
         output_dependent_264: Path,
         output_dependent_mvc: Optional[Path] = None,
         bitrate_kbps: int = 12000,
+        strict_bluray: bool = True,
         swap_eyes: bool = False,
         right_file: Optional[Path] = None,
         progress_cb: Optional[Callable[[int, int], None]] = None
@@ -42,7 +45,7 @@ class DependentViewEncoder:
         input_media = right_file if (right_file and right_file.exists()) else profile.path
         _, right_filter = IngestionEngine.get_filter_chains(profile, swap_eyes=swap_eyes)
 
-        print(f"[StereoForge] Pass 2 Dependent View encoding (Target: {bitrate_kbps} kbps)...")
+        print(f"[StereoForge] Pass 2 Dependent View encoding with {self.encoder} (Target: {bitrate_kbps} kbps)...")
         print(f"             Input: {input_media.name}")
         print(f"             Synchronizing across {len(manifest.frames)} frames from manifest...")
 
@@ -53,17 +56,13 @@ class DependentViewEncoder:
             "-i", str(input_media),
             "-vf", right_filter,
             "-pix_fmt", "yuv420p",
-            "-c:v", "libx264",
-            "-b:v", f"{bitrate_kbps}k",
-            "-profile:v", "high",
-            "-level:v", "4.1",
-            "-g", "24",
-            "-keyint_min", "24",
-            "-sc_threshold", "0",
+        ]
+        cmd.extend(get_h264_encoder_options(self.encoder, bitrate_kbps, strict_bluray=strict_bluray))
+        cmd.extend([
             "-an",
             "-f", "h264",
             str(output_dependent_264)
-        ]
+        ])
 
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
@@ -82,9 +81,14 @@ class DependentViewEncoder:
         self,
         input_264: Path,
         output_mvc: Path,
-        manifest: FrameManifest
+        manifest: Optional[FrameManifest] = None,
+        chunk_size: int = 1024 * 1024
     ) -> bool:
-        """Wraps standard slice NAL units (Type 1 and 5) into MVC Type 20 extension slices."""
+        """Wraps standard slice NAL units (Type 1 and 5) into MVC Type 20 extension slices.
+        
+        Uses chunked streaming buffers (1MB default) to process multi-gigabyte bitstreams
+        without loading the entire file into memory.
+        """
         view_info = MVCViewInfo(
             view_id=1,  # Right Eye
             is_base_view=False,
@@ -102,45 +106,85 @@ class DependentViewEncoder:
 
         try:
             with open(input_264, "rb") as fin, open(output_mvc, "wb") as fout:
-                data = fin.read()
-
-                # Find NAL units by Annex B start codes (0x00 00 01 or 0x00 00 00 01)
-                i = 0
-                n = len(data)
-
-                while i < n:
-                    # Look for start code
-                    if i + 3 < n and data[i:i+3] == b"\x00\x00\x01":
-                        start_code_len = 3
-                    elif i + 4 < n and data[i:i+4] == b"\x00\x00\x00\x01":
-                        start_code_len = 4
-                    else:
-                        fout.write(bytes([data[i]]))
-                        i += 1
-                        continue
-
-                    fout.write(data[i:i+start_code_len])
-                    i += start_code_len
-
-                    if i >= n:
+                buf = bytearray()
+                while True:
+                    chunk = fin.read(chunk_size)
+                    if not chunk:
                         break
+                    buf.extend(chunk)
 
-                    nal_header_byte = data[i]
-                    nal_ref_idc = (nal_header_byte >> 5) & 0x03
-                    nal_unit_type = nal_header_byte & 0x1F
+                    # Find all start codes in buf
+                    sc_list = []
+                    i = 0
+                    while True:
+                        idx = buf.find(b"\x00\x00\x01", i)
+                        if idx == -1:
+                            break
+                        if idx > 0 and buf[idx - 1] == 0:
+                            sc_list.append((idx - 1, 4))
+                        else:
+                            sc_list.append((idx, 3))
+                        i = idx + 3
 
-                    if nal_unit_type in (1, 5):
-                        # Convert Slice (Type 1) or IDR (Type 5) into Coded Slice Extension (Type 20)
-                        is_anchor = (nal_unit_type == 5)
-                        new_nal_byte = (nal_ref_idc << 5) | NAL_SLICE_EXT
-                        fout.write(bytes([new_nal_byte]))
-                        # Append 3-byte MVC header extension
-                        fout.write(mvc_ext_anchor if is_anchor else mvc_ext_header)
-                        i += 1
+                    # Process all complete NAL units except the last (which may be incomplete across chunks)
+                    if len(sc_list) > 1:
+                        if sc_list[0][0] > 0:
+                            fout.write(buf[:sc_list[0][0]])
+
+                        for k in range(len(sc_list) - 1):
+                            sc_pos, sc_len = sc_list[k]
+                            next_sc_pos = sc_list[k + 1][0]
+                            nal_hdr_idx = sc_pos + sc_len
+                            if nal_hdr_idx < next_sc_pos:
+                                nal_byte = buf[nal_hdr_idx]
+                                nal_ref = (nal_byte >> 5) & 0x03
+                                nal_type = nal_byte & 0x1F
+                                if nal_type in (1, 5):
+                                    fout.write(buf[sc_pos:nal_hdr_idx])
+                                    fout.write(bytes([(nal_ref << 5) | NAL_SLICE_EXT]))
+                                    fout.write(mvc_ext_anchor if nal_type == 5 else mvc_ext_header)
+                                    fout.write(buf[nal_hdr_idx + 1:next_sc_pos])
+                                else:
+                                    fout.write(buf[sc_pos:next_sc_pos])
+                            else:
+                                fout.write(buf[sc_pos:next_sc_pos])
+
+                        buf = buf[sc_list[-1][0]:]
+
+                # Process final remaining NAL units in buffer at EOF
+                if buf:
+                    sc_list = []
+                    i = 0
+                    while True:
+                        idx = buf.find(b"\x00\x00\x01", i)
+                        if idx == -1:
+                            break
+                        if idx > 0 and buf[idx - 1] == 0:
+                            sc_list.append((idx - 1, 4))
+                        else:
+                            sc_list.append((idx, 3))
+                        i = idx + 3
+
+                    if sc_list:
+                        for k in range(len(sc_list)):
+                            sc_pos, sc_len = sc_list[k]
+                            next_sc_pos = sc_list[k + 1][0] if k + 1 < len(sc_list) else len(buf)
+                            nal_hdr_idx = sc_pos + sc_len
+                            if nal_hdr_idx < next_sc_pos:
+                                nal_byte = buf[nal_hdr_idx]
+                                nal_ref = (nal_byte >> 5) & 0x03
+                                nal_type = nal_byte & 0x1F
+                                if nal_type in (1, 5):
+                                    fout.write(buf[sc_pos:nal_hdr_idx])
+                                    fout.write(bytes([(nal_ref << 5) | NAL_SLICE_EXT]))
+                                    fout.write(mvc_ext_anchor if nal_type == 5 else mvc_ext_header)
+                                    fout.write(buf[nal_hdr_idx + 1:next_sc_pos])
+                                else:
+                                    fout.write(buf[sc_pos:next_sc_pos])
+                            else:
+                                fout.write(buf[sc_pos:next_sc_pos])
                     else:
-                        # Write non-slice NAL unmodified (SPS, PPS, SEI, etc.)
-                        fout.write(bytes([nal_header_byte]))
-                        i += 1
+                        fout.write(buf)
 
             return True
         except Exception as e:

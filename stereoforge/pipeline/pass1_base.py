@@ -53,6 +53,40 @@ def detect_best_h264_encoder(ffmpeg_bin: str = "ffmpeg") -> str:
     return "libx264"
 
 
+def get_h264_encoder_options(
+    encoder: str,
+    bitrate_kbps: int,
+    strict_bluray: bool = True
+) -> list[str]:
+    """Returns optimized FFmpeg encoding arguments for the given H.264 encoder."""
+    args = ["-c:v", encoder, "-b:v", f"{bitrate_kbps}k"]
+
+    # Specific tuning per encoder family
+    if encoder == "h264_nvenc":
+        args.extend(["-preset", "p4", "-tune", "hq", "-rc:v", "vbr"])
+    elif encoder == "h264_qsv":
+        args.extend(["-preset", "medium"])
+    elif encoder == "h264_amf":
+        args.extend(["-quality", "balanced"])
+    elif encoder == "h264_videotoolbox":
+        args.extend(["-realtime", "0"])
+    elif encoder == "libx264":
+        args.extend(["-preset", "fast"])
+
+    if strict_bluray:
+        # Enforce Blu-ray Level 4.1 & VBV buffer constraints
+        args.extend([
+            "-profile:v", "high",
+            "-level:v", "4.1",
+            "-maxrate", "35000k",
+            "-bufsize", "30000k",
+            "-g", "24",  # Keyframe every 1 second
+            "-keyint_min", "24",
+            "-sc_threshold", "0"
+        ])
+    return args
+
+
 class BaseViewEncoder:
     """Runs Pass 1 on the GPU and extracts the frame manifest."""
 
@@ -92,23 +126,8 @@ class BaseViewEncoder:
             "-i", str(profile.path),
             "-vf", left_filter,
             "-pix_fmt", "yuv420p",
-            "-c:v", self.encoder,
-            "-b:v", f"{bitrate_kbps}k",
         ]
-
-        if strict_bluray:
-            # Enforce Blu-ray Level 4.1 & VBV buffer constraints
-            cmd.extend([
-                "-profile:v", "high",
-                "-level:v", "4.1",
-                "-maxrate", "35000k",
-                "-bufsize", "30000k",
-                "-g", "24",  # Keyframe every 1 second
-                "-keyint_min", "24",
-                "-sc_threshold", "0"
-            ])
-
-        # Output raw H.264 bitstream
+        cmd.extend(get_h264_encoder_options(self.encoder, bitrate_kbps, strict_bluray=strict_bluray))
         cmd.extend([
             "-an",  # Strip audio (audio is copied separately during muxing)
             "-f", "h264",

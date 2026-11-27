@@ -90,25 +90,52 @@ def interleave_mvc_streams(base_path: Path, dependent_path: Path, output_path: P
     within each access unit (AU). This ensures standard 2D players (like VLC) display
     an unsqueezed 16:9 1080p picture while 3D players access both stereoscopic eyes.
     """
-    def read_nal_units(file_path: Path):
-        with open(file_path, "rb") as f:
-            data = f.read()
-        i = 0
-        n = len(data)
-        start_positions = []
-        while i < n:
-            if i + 3 < n and data[i:i+3] == b"\x00\x00\x01":
-                start_positions.append(i)
-                i += 3
-            elif i + 4 < n and data[i:i+4] == b"\x00\x00\x00\x01":
-                start_positions.append(i)
-                i += 4
-            else:
-                i += 1
-        start_positions.append(n)
+    def read_nal_units(file_path: Path, chunk_size: int = 1024 * 1024):
         nals = []
-        for idx in range(len(start_positions) - 1):
-            nals.append(data[start_positions[idx]:start_positions[idx+1]])
+        with open(file_path, "rb") as f:
+            buf = bytearray()
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+
+                sc_list = []
+                i = 0
+                while True:
+                    idx = buf.find(b"\x00\x00\x01", i)
+                    if idx == -1:
+                        break
+                    if idx > 0 and buf[idx - 1] == 0:
+                        sc_list.append((idx - 1, 4))
+                    else:
+                        sc_list.append((idx, 3))
+                    i = idx + 3
+
+                if len(sc_list) > 1:
+                    for k in range(len(sc_list) - 1):
+                        sc_pos = sc_list[k][0]
+                        next_sc_pos = sc_list[k + 1][0]
+                        nals.append(bytes(buf[sc_pos:next_sc_pos]))
+                    buf = buf[sc_list[-1][0]:]
+
+            if buf:
+                sc_list = []
+                i = 0
+                while True:
+                    idx = buf.find(b"\x00\x00\x01", i)
+                    if idx == -1:
+                        break
+                    if idx > 0 and buf[idx - 1] == 0:
+                        sc_list.append((idx - 1, 4))
+                    else:
+                        sc_list.append((idx, 3))
+                    i = idx + 3
+                if sc_list:
+                    for k in range(len(sc_list)):
+                        sc_pos = sc_list[k][0]
+                        next_sc_pos = sc_list[k + 1][0] if k + 1 < len(sc_list) else len(buf)
+                        nals.append(bytes(buf[sc_pos:next_sc_pos]))
         return nals
 
     base_nals = read_nal_units(base_path)

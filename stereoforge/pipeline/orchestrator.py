@@ -76,7 +76,7 @@ class StereoForgePipeline:
 
         try:
             # Stage 1: Pass 1 Base View (GPU)
-            report(f"Pass 1: Encoding Left Eye ({base_kbps} kbps on GPU)...", 0.10)
+            report(f"Pass 1: Encoding Left Eye ({base_kbps} kbps on {self.base_encoder.encoder})...", 0.10)
             manifest = self.base_encoder.encode(
                 profile=profile,
                 output_base_264=base_264,
@@ -86,8 +86,8 @@ class StereoForgePipeline:
                 swap_eyes=job.swap_eyes
             )
 
-            # Stage 2: Pass 2 Dependent View (CPU)
-            report(f"Pass 2: Encoding Right Eye ({dep_kbps} kbps on CPU)...", 0.50)
+            # Stage 2: Pass 2 Dependent View (GPU)
+            report(f"Pass 2: Encoding Right Eye ({dep_kbps} kbps on {self.dep_encoder.encoder})...", 0.50)
             success = self.dep_encoder.encode(
                 profile=profile,
                 base_bitstream_path=base_264,
@@ -95,6 +95,7 @@ class StereoForgePipeline:
                 output_dependent_264=dep_264,
                 output_dependent_mvc=dep_mvc,
                 bitrate_kbps=dep_kbps,
+                strict_bluray=job.strict_bluray,
                 swap_eyes=job.swap_eyes,
                 right_file=job.right_file
             )
