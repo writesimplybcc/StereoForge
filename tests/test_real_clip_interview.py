@@ -141,7 +141,60 @@ def main():
         native = NativeMVCEngine(width=w, height=h, bitrate_kbps=15000, strict_bluray=True)
         sps = native.get_subset_sps()
         print(f"      * Native DLL generated Subset SPS: {len(sps)} bytes (NAL Unit Type 15, Stereo High 128)")
+
+        # Encode full dependent stream (.mvc) across all 72 frames
+        mvc_stream_file = tmp_dir / "dependent_right.mvc"
+        total_mvc_bytes = 0
+        encoded_frames = 0
+        disp_records = []
+
+        start_c_enc = time.perf_counter()
+        with open(mvc_stream_file, "wb") as fmvc, open(left_recon_yuv, "rb") as fl_rec, open(r_yuv_file, "rb") as fr_raw:
+            # Write initial Annex H Subset SPS
+            fmvc.write(sps)
+            total_mvc_bytes += len(sps)
+
+            for f_idx in range(num_frames):
+                raw_rec = fl_rec.read(frame_sz)
+                raw_r = fr_raw.read(frame_sz)
+                if len(raw_rec) < frame_sz or len(raw_r) < frame_sz:
+                    break
+
+                is_key = (f_idx % 24 == 0)
+                luma_rec_bytes = raw_rec[:luma_sz]
+                luma_r_bytes = raw_r[:luma_sz]
+
+                # If keyframe after the first, repeat Subset SPS before IDR slice
+                if is_key and f_idx > 0:
+                    fmvc.write(sps)
+                    total_mvc_bytes += len(sps)
+
+                # Native C frame encode (inter-view disparity + skip coding)
+                nal20_packet = native.encode_dependent_frame(
+                    right_y=luma_r_bytes,
+                    left_y=luma_rec_bytes,
+                    is_keyframe=is_key,
+                    pts=f_idx * 1001,
+                    dts=f_idx * 1001
+                )
+                fmvc.write(nal20_packet)
+                total_mvc_bytes += len(nal20_packet)
+                encoded_frames += 1
+
+                # Disparity statistics sample (frame 0 and frame 1)
+                if f_idx < 3:
+                    mb_disp = native.estimate_disparity(luma_r_bytes, luma_rec_bytes)
+                    disp_records.append(mb_disp)
+
+        c_enc_time = time.perf_counter() - start_c_enc
         native.close()
+
+        print(f"      * Encoded {encoded_frames} MVC frames in {c_enc_time:.2f}s ({encoded_frames / c_enc_time:.1f} FPS)")
+        print(f"      * Standalone Dependent MVC Stream: {total_mvc_bytes:,} bytes ({total_mvc_bytes / 1024:.1f} KB)")
+        if disp_records:
+            first_frame_mbs = disp_records[0]
+            non_zero_mbs = [mb for mb in first_frame_mbs if mb[0] != 0]
+            print(f"      * Native 16x16 Macroblock Disparity: {len(non_zero_mbs)} / {len(first_frame_mbs)} non-zero disparity MBs")
 
         print("\n" + "=" * 70)
         print("🎉 REAL FOOTAGE TEST PASSED! INTER-VIEW ENGINE IS FUNCTIONAL & ACCURATE.")

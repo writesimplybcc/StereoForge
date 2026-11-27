@@ -54,7 +54,7 @@ int main(void) {
     memset(&left_f, 0, sizeof(left_f));
     left_f.y_plane = left_luma;
 
-    uint8_t pkt_buf[4096];
+    uint8_t pkt_buf[65536];
     stereoforge_packet_t pkt;
     pkt.data = pkt_buf;
     pkt.capacity = sizeof(pkt_buf);
@@ -80,7 +80,9 @@ int main(void) {
     printf("✅ Encoded Inter-View P-Frame: %zu bytes (NAL Unit Type 20 with RPLM).\n", pkt.size);
 
     // Test 4: Disparity estimation
-    int num_mbs = (cfg.width / 16) * (cfg.height / 16);
+    int mb_w = (cfg.width + 15) / 16;
+    int mb_h = (cfg.height + 15) / 16;
+    int num_mbs = mb_w * mb_h;
     stereoforge_disparity_t* disp = (stereoforge_disparity_t*)malloc(sizeof(stereoforge_disparity_t) * num_mbs);
     int mbs_done = stereoforge_mvc_estimate_disparity(ctx, right_luma, left_luma, disp);
     assert(mbs_done == num_mbs);

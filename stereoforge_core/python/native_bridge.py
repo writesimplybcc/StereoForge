@@ -74,6 +74,14 @@ class _PacketStruct(ctypes.Structure):
     ]
 
 
+class _DisparityStruct(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_int16),
+        ("dy", ctypes.c_int16),
+        ("sad", ctypes.c_uint32),
+    ]
+
+
 if _native_lib:
     # Explicit 64-bit restypes and argtypes to prevent pointer truncation
     _native_lib.stereoforge_mvc_init.restype = ctypes.c_void_p
@@ -88,6 +96,14 @@ if _native_lib:
         ctypes.POINTER(_FrameStruct),
         ctypes.POINTER(_FrameStruct),
         ctypes.POINTER(_PacketStruct),
+    ]
+
+    _native_lib.stereoforge_mvc_estimate_disparity.restype = ctypes.c_int
+    _native_lib.stereoforge_mvc_estimate_disparity.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.POINTER(_DisparityStruct),
     ]
 
     _native_lib.stereoforge_mvc_close.restype = None
@@ -140,6 +156,79 @@ class NativeMVCEngine:
         if length > 0:
             return buf.raw[:length]
         raise RuntimeError("Failed to generate Subset SPS from native core")
+
+    def encode_dependent_frame(
+        self,
+        right_y: bytes,
+        left_y: Optional[bytes] = None,
+        is_keyframe: bool = False,
+        pts: int = 0,
+        dts: int = 0,
+        max_packet_size: int = 1048576  # 1MB buffer
+    ) -> bytes:
+        """Encodes one Right Eye frame into an Annex H NAL 20 dependent slice."""
+        right_f = _FrameStruct(
+            y_plane=right_y,
+            u_plane=None,
+            v_plane=None,
+            stride_y=self.cfg.width,
+            stride_uv=self.cfg.width // 2,
+            pts=pts,
+            dts=dts,
+            is_keyframe=1 if is_keyframe else 0
+        )
+
+        left_f_ptr = None
+        if left_y:
+            left_f = _FrameStruct(
+                y_plane=left_y,
+                u_plane=None,
+                v_plane=None,
+                stride_y=self.cfg.width,
+                stride_uv=self.cfg.width // 2,
+                pts=pts,
+                dts=dts,
+                is_keyframe=1 if is_keyframe else 0
+            )
+            left_f_ptr = ctypes.byref(left_f)
+
+        pkt_buf = ctypes.create_string_buffer(max_packet_size)
+        pkt = _PacketStruct(
+            data=ctypes.cast(pkt_buf, ctypes.c_char_p),
+            size=0,
+            capacity=max_packet_size,
+            pts=pts,
+            dts=dts,
+            is_keyframe=1 if is_keyframe else 0
+        )
+
+        ret = _native_lib.stereoforge_mvc_encode_frame(
+            self._ctx,
+            ctypes.byref(right_f),
+            left_f_ptr,
+            ctypes.byref(pkt)
+        )
+        if ret == 0 and pkt.size > 0:
+            return pkt_buf.raw[:pkt.size]
+        raise RuntimeError(f"Native MVC encode failed with code: {ret}")
+
+    def estimate_disparity(self, right_y: bytes, left_y: bytes) -> List[Tuple[int, int, int]]:
+        """Calculates 16x16 macroblock disparity vectors against left eye."""
+        mb_w = (self.cfg.width + 15) // 16
+        mb_h = (self.cfg.height + 15) // 16
+        total_mbs = mb_w * mb_h
+
+        disp_arr = (_DisparityStruct * total_mbs)()
+        ret = _native_lib.stereoforge_mvc_estimate_disparity(
+            self._ctx,
+            right_y,
+            left_y,
+            disp_arr
+        )
+        if ret != total_mbs:
+            raise RuntimeError(f"Disparity estimation failed: returned {ret}, expected {total_mbs}")
+
+        return [(disp_arr[i].dx, disp_arr[i].dy, disp_arr[i].sad) for i in range(total_mbs)]
 
     def close(self):
         if self._ctx:
