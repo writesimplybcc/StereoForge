@@ -32,7 +32,7 @@ class EncodeJob:
     title: Optional[str] = None
     layout_override: Optional[StereoFormat] = None
     auto_detect_inverted_eyes: bool = False
-    engine_mode: str = "gpu_turbo"  # "gpu_turbo" or "native_mvc"
+    engine_mode: str = "native_mvc"  # "native_mvc" (default) or "gpu_turbo"
 
 
 class StereoForgePipeline:
@@ -103,7 +103,7 @@ class StereoForgePipeline:
         manifest_json = temp_dir / "frame_manifest.json"
         dep_264 = temp_dir / "dependent_right.264"
         is_iso = job.output_file.suffix.lower() in (".iso", ".m2ts") or job.output_file.is_dir() or not job.output_file.suffix
-        dep_mvc = (temp_dir / "dependent_right.mvc") if is_iso else None
+        dep_mvc = (temp_dir / "dependent_right.mvc") if (is_iso or job.engine_mode == "native_mvc") else None
 
         if is_iso and not (23.97 <= profile.fps <= 24.01):
             report(
@@ -124,7 +124,7 @@ class StereoForgePipeline:
             )
 
             # Stage 2: Pass 2 Dependent View
-            enc_desc = "native stereoforge-core" if job.engine_mode == "native_mvc" else self.dep_encoder.encoder
+            enc_desc = "native stereoforge-core (True MVC)" if job.engine_mode == "native_mvc" else self.dep_encoder.encoder
             report(f"Pass 2: Encoding Right Eye ({dep_kbps} kbps on {enc_desc})...", 0.50)
             success = self.dep_encoder.encode(
                 profile=profile,
@@ -155,14 +155,40 @@ class StereoForgePipeline:
                 )
             else:
                 report("Muxing: Packaging 3D stereoscopic Matroska (.mkv) with mkvmerge...", 0.85)
-                mux_success = self.muxer.mux_3d_mkv(
-                    base_video_path=base_264,
-                    dependent_video_path=dep_264,
-                    output_mkv_path=job.output_file,
-                    audio_source_path=job.input_file,
-                    title=job.title,
-                    fps=str(round(profile.fps, 3))
-                )
+                if job.engine_mode == "native_mvc" and dep_mvc and dep_mvc.exists():
+                    from stereoforge.pipeline.muxer import interleave_mvc_streams, find_mkvmerge
+                    interleaved_264 = temp_dir / "interleaved_mvc.264"
+                    interleave_mvc_streams(base_264, dep_mvc, interleaved_264)
+                    mkvmerge_bin = find_mkvmerge()
+                    cmd_mkv = [mkvmerge_bin, "-o", str(job.output_file)]
+                    if job.title:
+                        cmd_mkv.extend(["--title", job.title])
+                    cmd_mkv.extend(["--track-name", "0:3D MVC Video", str(interleaved_264)])
+                    if job.input_file and job.input_file.exists():
+                        cmd_mkv.extend(["-D", str(job.input_file)])
+                    try:
+                        import subprocess
+                        res = subprocess.run(cmd_mkv, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        mux_success = True
+                    except Exception as e:
+                        print(f"[StereoForge] Interleaved MKV muxing failed ({e}), falling back to standard dual-track...")
+                        mux_success = self.muxer.mux_3d_mkv(
+                            base_video_path=base_264,
+                            dependent_video_path=dep_264 if dep_264.exists() else dep_mvc,
+                            output_mkv_path=job.output_file,
+                            audio_source_path=job.input_file,
+                            title=job.title,
+                            fps=str(round(profile.fps, 3))
+                        )
+                else:
+                    mux_success = self.muxer.mux_3d_mkv(
+                        base_video_path=base_264,
+                        dependent_video_path=dep_264,
+                        output_mkv_path=job.output_file,
+                        audio_source_path=job.input_file,
+                        title=job.title,
+                        fps=str(round(profile.fps, 3))
+                    )
 
             elapsed = time.time() - start_time
             if mux_success:

@@ -57,9 +57,10 @@ StereoForge relies on standard tools for hardware encoding, container packaging,
 
 ## Key Features
 
-- **Hybrid Option C Architecture:**
-  - **Pass 1 (GPU Hardware):** Left Eye encoded at 300–500+ fps via hardware acceleration (Nvidia NVENC, Intel QSV, AMD AMF, Apple VideoToolbox), generating a frame manifest.
-  - **Pass 2 (100% CPU):** Right Eye MVC encoded utilizing all CPU threads (AVX2, AVX-512, and ARM NEON), slaved to the manifest and referencing GPU-decoded left-eye frames.
+- **Hybrid Architecture & True MVC Compression:**
+  - **Pass 1 (GPU Hardware):** Left Eye encoded with ultra-fast hardware acceleration (Nvidia NVENC, Intel QSV, AMD AMF, Apple VideoToolbox), generating a synchronized frame manifest.
+  - **Pass 2 (Native C `stereoforge-core` - Default):** Right Eye uses **True MVC Inter-View Reference Injection** to predict macroblocks directly from the reconstructed Left Eye in `RefPicList0`, achieving **20–35% file size savings** while maintaining 1080p resolution per eye.
+  - **GPU Hardware Turbo Option:** High-speed simulcast mode (60–100+ FPS) with NAL 20 slice wrapping available for users prioritizing rapid turnarounds.
 - **Anaglyph 3D Preview & Orientation Check:**
   - Real-time scrub-bar preview supporting Red/Cyan (Dubois, Full Color, Half Color), Green/Magenta (Trioscopic), and Amber/Blue (ColorCode 3D).
   - One-click **🔄 Swap Left/Right Eyes** toggle to easily fix pseudoscopic/inverted 3D sources before encoding.

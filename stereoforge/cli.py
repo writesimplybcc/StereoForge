@@ -23,6 +23,12 @@ def main():
     parser.add_argument("--preset", choices=["bd50", "bd25", "vr", "custom"], default="vr", help="Quality profile preset")
     parser.add_argument("--swap-eyes", action="store_true", help="Force swap Left and Right eye channels")
     parser.add_argument("--check-parity", action="store_true", help="Run automated inverted eye disparity check")
+    parser.add_argument(
+        "--engine",
+        choices=["native_mvc", "gpu_turbo"],
+        default="native_mvc",
+        help="Encoding engine mode: 'native_mvc' (default: True space-saving MVC inter-view injection) or 'gpu_turbo' (fast GPU simulcast)"
+    )
 
     args = parser.parse_args()
 

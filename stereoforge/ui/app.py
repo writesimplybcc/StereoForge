@@ -355,8 +355,8 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         engine_row.addWidget(QLabel("Engine Mode:"))
         self.engine_mode_combo = QComboBox()
         self.engine_mode_combo.addItems([
-            "🚀 GPU Hardware Turbo (Fastest, 60–100+ FPS)",
-            "🔬 Native C stereoforge-core (True MVC Inter-View Space-Saver)"
+            "🔬 True MVC Inter-View Engine (stereoforge-core) - Recommended",
+            "🚀 GPU Hardware Turbo (Fastest Simulcast, No Inter-View Savings)"
         ])
         engine_row.addWidget(self.engine_mode_combo, stretch=1)
         set_layout.addLayout(engine_row)
@@ -806,7 +806,7 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         custom_title = self.title_edit.text().strip() or None
 
-        selected_engine = "native_mvc" if self.engine_mode_combo.currentIndex() == 1 else "gpu_turbo"
+        selected_engine = "gpu_turbo" if self.engine_mode_combo.currentIndex() == 1 else "native_mvc"
 
         job = EncodeJob(
             input_file=self.input_file,
