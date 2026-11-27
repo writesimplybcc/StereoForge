@@ -10,9 +10,14 @@ Write-Host "  Imagined by writesimply.bcc • Coded by Gemini" -ForegroundColor 
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host ""
 
-$PythonExe = "C:\Users\writesimply\AppData\Local\Programs\Python\Python312\python.exe"
-if (-not (Test-Path $PythonExe)) {
-    $PythonExe = "python"
+$PythonExe = "python"
+if (-not (Get-Command $PythonExe -ErrorAction SilentlyContinue)) {
+    $PythonExe = "C:\Users\writesimply\AppData\Local\Programs\Python\Python312\python.exe"
+}
+if (-not (Get-Command $PythonExe -ErrorAction SilentlyContinue) -and -not (Test-Path $PythonExe)) {
+    Write-Host "[ERROR] Python was not found in your PATH." -ForegroundColor Red
+    pause
+    exit 1
 }
 
 Write-Host "Checking dependencies..." -ForegroundColor Yellow
