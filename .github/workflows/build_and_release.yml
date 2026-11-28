@@ -35,7 +35,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg mkvtoolnix
+          sudo apt-get install -y ffmpeg mkvtoolnix libgl1 libglib2.0-0 libegl1 libxkbcommon-x11-0
 
       - name: Install System Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -49,6 +49,8 @@ jobs:
           pip install pytest pytest-cov
 
       - name: Run Test Suite
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
           pytest tests/ -v
 

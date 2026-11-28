@@ -56,6 +56,10 @@ EOF
 echo "Creating $ZIP_NAME..."
 cd "$DIST_DIR"
 rm -f "$ZIP_NAME"
-zip -rq "$ZIP_NAME" "StereoForge_macOS"
+if command -v zip >/dev/null 2>&1; then
+    zip -rq "$ZIP_NAME" "StereoForge_macOS"
+else
+    tar -a -c -f "$ZIP_NAME" "StereoForge_macOS"
+fi
 
 echo "🎉 macOS package created successfully at: $DIST_DIR/$ZIP_NAME"
