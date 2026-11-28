@@ -13,7 +13,7 @@ import shutil
 import re
 
 from stereoforge.core.manifest import FrameManifest, StreamMetadata, FrameEntry
-from stereoforge.pipeline.ingest import MediaProfile, IngestionEngine
+from stereoforge.pipeline.ingest import MediaProfile, IngestionEngine, StereoFormat
 
 
 def test_h264_encoder(ffmpeg_bin: str, encoder: str) -> bool:

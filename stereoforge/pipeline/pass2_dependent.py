@@ -17,7 +17,7 @@ from stereoforge.core.mvc_syntax import (
     MVCViewInfo,
     MVCBitstreamHeader
 )
-from stereoforge.pipeline.ingest import MediaProfile, IngestionEngine
+from stereoforge.pipeline.ingest import MediaProfile, IngestionEngine, StereoFormat
 from stereoforge.pipeline.pass1_base import detect_best_h264_encoder, get_h264_encoder_options
 
 
