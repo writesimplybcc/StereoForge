@@ -94,8 +94,14 @@ def main():
     print("   Input 0: left.264 (Decoded Base View)")
     print("   Input 1: dependent.264 (Decoded Dependent MVC View)")
 
-    # Filter: Hstack Left and Right decoded streams -> stereo3d=sbs2l:arcd (Dubois Red/Cyan)
-    filter_complex = "[0:v][1:v]hstack[sbs];[sbs]stereo3d=sbs2l:arcd[v_out]"
+    # Filter: Scale both streams to standard 1080p 1:1 SAR, hstack, and merge with Dubois stereo3d
+    # Enforces strict 16:9 square pixels (SAR 1:1) so playback is never squeezed in any player.
+    filter_complex = (
+        "[0:v]scale=1920:1080,setsar=1[l];"
+        "[1:v]scale=1920:1080,setsar=1[r];"
+        "[l][r]hstack[sbs];"
+        "[sbs]stereo3d=in=sbsl:out=arcd,scale=1920:1080,setsar=1[v_out]"
+    )
 
     cmd_anaglyph = [
         "ffmpeg", "-y",
@@ -111,6 +117,7 @@ def main():
         "-preset", "fast",
         "-crf", "18",
         "-pix_fmt", "yuv420p",
+        "-aspect", "16:9",
         "-c:a", "aac",
         "-b:a", "192k",
         str(anaglyph_mp4)

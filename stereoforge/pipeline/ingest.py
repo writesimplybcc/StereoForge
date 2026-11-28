@@ -60,6 +60,7 @@ class MediaProfile:
     audio_tracks: int
     subtitle_tracks: int
     is_interlaced: bool = False
+    is_8k: bool = False
     audio_streams: List[Dict[str, Any]] = field(default_factory=list)
     subtitle_streams: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -213,6 +214,7 @@ class IngestionEngine:
             is_10bit=is_10bit,
             is_hdr=is_hdr,
             is_interlaced=is_interlaced,
+            is_8k=(width >= 7680 or height >= 4320),
             stereo_format=stereo_format,
             audio_tracks=len(audio_streams),
             subtitle_tracks=len(sub_streams),
@@ -237,25 +239,28 @@ class IngestionEngine:
         # Motion-adaptive deinterlacing for 60i/50i camcorders (Sony TD10/TD20/TD30, JVC, Panasonic)
         deint = "bwdif=mode=0:parity=auto:deint=all," if profile.is_interlaced else ""
 
+        # High-performance Lanczos3 anti-aliasing scaling filter for 8K / 4K downsampling to 1080p
+        scale_opts = ":flags=lanczos" if (profile.width >= 3840 or profile.height >= 2160 or getattr(profile, 'is_8k', False)) else ""
+
         if fmt == StereoFormat.FULL_SBS:
-            l_crop = f"{deint}crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"{deint}crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw/2:ih:0:0,scale={target_w}:{target_h}{scale_opts},setsar=1"
+            r_crop = f"{deint}crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h}{scale_opts},setsar=1"
         elif fmt == StereoFormat.HALF_SBS:
-            l_crop = f"{deint}crop=iw/2:ih:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"{deint}crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw/2:ih:0:0,scale={target_w}:{target_h}{scale_opts},setsar=1"
+            r_crop = f"{deint}crop=iw/2:ih:iw/2:0,scale={target_w}:{target_h}{scale_opts},setsar=1"
         elif fmt == StereoFormat.FULL_TAB:
-            l_crop = f"{deint}crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"{deint}crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw:ih/2:0:0,scale={target_w}:{target_h}{scale_opts},setsar=1"
+            r_crop = f"{deint}crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h}{scale_opts},setsar=1"
         elif fmt == StereoFormat.HALF_TAB:
-            l_crop = f"{deint}crop=iw:ih/2:0:0,scale={target_w}:{target_h},setsar=1"
-            r_crop = f"{deint}crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}crop=iw:ih/2:0:0,scale={target_w}:{target_h}{scale_opts},setsar=1"
+            r_crop = f"{deint}crop=iw:ih/2:0:ih/2,scale={target_w}:{target_h}{scale_opts},setsar=1"
         elif fmt == StereoFormat.MULTI_STREAM_AVI:
-            l_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
-            r_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}scale={target_w}:{target_h}{scale_opts},setsar=1"
+            r_crop = f"{deint}scale={target_w}:{target_h}{scale_opts},setsar=1"
         else:
             # Passthrough or default 1:1
-            l_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
-            r_crop = f"{deint}scale={target_w}:{target_h},setsar=1"
+            l_crop = f"{deint}scale={target_w}:{target_h}{scale_opts},setsar=1"
+            r_crop = f"{deint}scale={target_w}:{target_h}{scale_opts},setsar=1"
 
         # HDR to SDR Tone Mapping if needed
         hdr_filter = ""
