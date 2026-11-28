@@ -35,15 +35,22 @@ def build_package():
         dirs_exist_ok=True
     )
 
-    # 3. Copy Tools Setup and Available Binaries
-    print("   -> Setting up tools directory...")
+    # 3. Ensure and Copy Tools (tsMuxeR and Subwoofa)
+    print("   -> Setting up bundled tools (tsMuxeR and Subwoofa)...")
     target_tools = TARGET_DIR / "tools"
     target_tools.mkdir(exist_ok=True)
-    shutil.copy(REPO_ROOT / "tools" / "download_tools.py", target_tools / "download_tools.py")
-    if (REPO_ROOT / "tools" / "tsMuxeR.exe").exists():
-        shutil.copy(REPO_ROOT / "tools" / "tsMuxeR.exe", target_tools / "tsMuxeR.exe")
-    if (REPO_ROOT / "tools" / "subwoofa-cli.exe").exists():
-        shutil.copy(REPO_ROOT / "tools" / "subwoofa-cli.exe", target_tools / "subwoofa-cli.exe")
+    tools_src = REPO_ROOT / "tools"
+
+    if not (tools_src / "tsMuxeR.exe").exists() or not (tools_src / "subwoofa-cli.exe").exists():
+        print("   -> Missing tools detected. Running download_tools...")
+        import subprocess
+        subprocess.run([sys.executable, str(tools_src / "download_tools.py")], check=True)
+
+    shutil.copy(tools_src / "download_tools.py", target_tools / "download_tools.py")
+    if (tools_src / "tsMuxeR.exe").exists():
+        shutil.copy(tools_src / "tsMuxeR.exe", target_tools / "tsMuxeR.exe")
+    if (tools_src / "subwoofa-cli.exe").exists():
+        shutil.copy(tools_src / "subwoofa-cli.exe", target_tools / "subwoofa-cli.exe")
 
     # 4. Copy Launchers and Metadata
     print("   -> Copying launchers, requirements, and documentation...")
@@ -60,10 +67,13 @@ def build_package():
     quick_start.write_text(
         "StereoForge Portable Edition\n"
         "============================\n\n"
+        "Conception & Vision: writesimply.bcc\n"
+        "Architecture & Code: Gemini\n"
+        "DTS-HD Master Audio Engine: Subwoofa by Callum (callumcomplains/subwoofa)\n\n"
         "Quick Start:\n"
         "1. Double-click 'run_stereoforge.bat' to launch the GUI.\n"
-        "2. To verify or download external helpers (tsMuxeR / subwoofa), run:\n"
-        "   python tools/download_tools.py\n\n"
+        "   (All bundled tools, tsMuxeR and Subwoofa, are included in tools/).\n"
+        "2. To verify or re-download tools at any time, run: python tools/download_tools.py\n\n"
         "Documentation & Source: https://github.com/writesimplybcc/StereoForge\n"
     )
 

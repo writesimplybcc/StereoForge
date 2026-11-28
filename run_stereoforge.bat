@@ -89,6 +89,15 @@ if errorlevel 1 (
     )
 )
 
+:: 6b. Bundled tools check (tsMuxeR and Subwoofa DTS-HD MA)
+if not exist "%~dp0tools\tsMuxeR.exe" (
+    echo Setting up bundled tools (tsMuxeR and Subwoofa)...
+    %PYTHON% "%~dp0tools\download_tools.py"
+) else if not exist "%~dp0tools\subwoofa-cli.exe" (
+    echo Setting up bundled tools (Subwoofa DTS-HD MA)...
+    %PYTHON% "%~dp0tools\download_tools.py"
+)
+
 :: 7. Launch StereoForge
 echo Launching StereoForge GUI...
 set "PYTHONPATH=%~dp0"

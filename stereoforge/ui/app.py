@@ -262,7 +262,7 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         self.header_label.setFont(QFont("Segoe UI", 22, QFont.Bold))
         header_vbox.addWidget(self.header_label)
 
-        self.subhead_label = QLabel("Imagined by writesimply.bcc • Coded by Gemini")
+        self.subhead_label = QLabel("Imagined by writesimply.bcc • Coded by Gemini • Audio by Subwoofa")
         self.subhead_label.setFont(QFont("Segoe UI", 10))
         header_vbox.addWidget(self.subhead_label)
         top_bar.addLayout(header_vbox, stretch=1)
@@ -304,8 +304,9 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         subwoofa_bin = find_subwoofa()
         sub_ok = shutil.which(subwoofa_bin) is not None or Path(subwoofa_bin).is_file()
-        sub_badge = "🔊 subwoofa: Ready (DTS-HD MA)" if sub_ok else "🔊 subwoofa: Optional (LPCM)"
+        sub_badge = "🔊 Subwoofa: Active (DTS-HD MA)" if sub_ok else "🔊 Subwoofa: Not Found (LPCM Fallback)"
         self.sub_status_lbl = QLabel(sub_badge)
+        self.sub_status_lbl.setToolTip("DTS-HD Master Audio authoring engine by Callum (@callumcomplains)")
         self.sub_status_lbl.setStyleSheet("background: rgba(234, 179, 8, 0.15); color: #CA8A04; font-weight: bold; font-size: 11px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(234, 179, 8, 0.3);")
 
         engine_bar.addWidget(self.gpu_status_lbl)

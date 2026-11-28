@@ -94,6 +94,12 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
+# 6b. Bundled tools check (tsMuxeR and Subwoofa DTS-HD MA)
+if (-not (Test-Path "$ScriptDir\tools\tsMuxeR.exe") -or -not (Test-Path "$ScriptDir\tools\subwoofa-cli.exe")) {
+    Write-Host "Setting up bundled tools (tsMuxeR and Subwoofa DTS-HD MA)..." -ForegroundColor Cyan
+    & $PythonExe "$ScriptDir\tools\download_tools.py"
+}
+
 # 7. Launch StereoForge
 Write-Host "Launching StereoForge GUI..." -ForegroundColor Green
 $env:PYTHONPATH = $ScriptDir

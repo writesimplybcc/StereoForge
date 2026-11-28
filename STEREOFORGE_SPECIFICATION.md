@@ -144,3 +144,4 @@ StereoForge utilizes a decoupled, heterogeneous pipeline that maximizes the capa
 ## 6. Credits
 * **Conception, UX & Vision:** writesimply.bcc
 * **Architecture & Code:** Gemini
+* **DTS-HD Master Audio Engine:** Subwoofa by Callum ([@callumcomplains](https://github.com/callumcomplains/subwoofa))

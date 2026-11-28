@@ -118,7 +118,8 @@ def main():
     args = parser.parse_args()
 
     print(f"🎬 StereoForge v{__version__}")
-    print("   Imagined by writesimply.bcc • Coded by Gemini\n")
+    print("   Imagined by writesimply.bcc • Coded by Gemini")
+    print("   Featuring True MVC (stereoforge-core), tsMuxeR & Subwoofa (DTS-HD MA)\n")
 
     strict_bd = args.strict_bluray or (args.preset in ("bd50", "bd25"))
     effective_bitrate = args.bitrate

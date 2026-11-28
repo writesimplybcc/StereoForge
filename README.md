@@ -1,5 +1,5 @@
 # StereoForge
-> **Imagined by writesimply.bcc • Coded by Gemini**
+> **Imagined by writesimply.bcc • Coded by Gemini • Audio by Subwoofa**
 
 ---
 
@@ -49,7 +49,8 @@ StereoForge relies on standard tools for hardware encoding, container packaging,
 | **Python 3.10+** | `winget install Python.Python.3.12` | `brew install python` | `sudo apt install python3 python3-pip` |
 | **FFmpeg** | `winget install Gyan.FFmpeg` | `brew install ffmpeg` | `sudo apt install ffmpeg` |
 | **MKVToolNix** | `winget install MKVToolNix.MKVToolNix` | `brew install mkvtoolnix` | `sudo apt install mkvtoolnix` |
-| **tsMuxeR** *(Optional for Blu-ray ISO)* | Download from [tsMuxer GitHub](https://github.com/justdan96/tsMuxer) | Download macOS build / drop in `tools/` | Download Linux build / drop in `tools/` |
+| **tsMuxeR** *(Required for 3D Blu-ray ISO)* | Auto-installed or drop in `tools/` | Download macOS build / drop in `tools/` | Download Linux build / drop in `tools/` |
+| **Subwoofa** *(Lossless DTS-HD MA Engine)* | Pre-bundled & auto-installed into `tools/` | Build from source / drop in `tools/` | Build from source / drop in `tools/` |
 
 > **Note on Tool Discovery:** StereoForge automatically scans standard directories across all operating systems (including `C:\Program Files\MKVToolNix`, `C:\ffmpeg\bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `StereoForge/tools/`, and system `PATH`). You do not need to manually configure environment variables if tools are installed in their standard locations.
 
@@ -74,8 +75,10 @@ StereoForge relies on standard tools for hardware encoding, container packaging,
 - **Framerate Compatibility & Authoring Rules:**
   - **Playable Physical 3D Blu-ray Discs:** Must be encoded at **1080p @ 23.976 / 24 fps** (with the 40 Mbps VBV cap) to comply with the Blu-ray Disc Association (BDA) hardware standard for standalone consumer players (Sony, Panasonic, Oppo).
   - **Network / File / VLC4MVC Playback:** If playing from a NAS (SMB/NFS), BD data disc, or USB on Android players (Zidoo, Dune HD, Shield, Ugoos) connected to 3D 4K projectors, **arbitrary native framerates (24, 30, 48 HFR, 50, 60 fps)** and uncapped bitrates are fully supported without physical disc constraints.
-- **Lossless Audio Passthrough:**
+- **Lossless Audio Passthrough & True DTS-HD Master Audio (Powered by Subwoofa):**
   - Direct bitstream copy for Dolby Atmos, TrueHD, DTS:X, and DTS-HD Master Audio.
+  - Lossless encoding of multi-channel FLAC/WAV audio into bit-perfect, certified **DTS-HD Master Audio 5.1/7.1** (`.dtshd`) bitstreams via Callum's high-speed **Subwoofa** engine ([@callumcomplains](https://github.com/callumcomplains/subwoofa)), multiplexed natively into compliant 3D Blu-ray ISOs.
+  - Subwoofa is an integral part of the StereoForge installation package (pre-bundled with the portable distribution and auto-downloaded on launch).
 
 ---
 
@@ -101,3 +104,4 @@ StereoForge/
 ## Credits
 * **Conception, UX & Vision:** `writesimply.bcc`
 * **Architecture & Code:** `Gemini`
+* **DTS-HD Master Audio Engine:** Subwoofa by Callum ([@callumcomplains](https://github.com/callumcomplains/subwoofa))

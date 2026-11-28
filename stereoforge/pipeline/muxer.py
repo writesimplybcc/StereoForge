@@ -409,7 +409,8 @@ class MuxerEngine:
                         a_str = str(temp_file).replace("\\", "/")
                         meta_lines.append(f'A_EAC3, "{a_str}"{lang_param}')
                     elif codec == "flac" and self.is_subwoofa_available():
-                        # Encode FLAC directly to DTS-HD Master Audio using Subwoofa
+                        # Encode FLAC directly to DTS-HD Master Audio using bundled Subwoofa
+                        print(f"[StereoForge] Encoding lossless DTS-HD Master Audio (track {a_idx}) via Subwoofa...")
                         temp_wav = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.wav"
                         temp_dtshd = output_dir_or_iso.parent / f"temp_tsmuxer_audio_{a_idx}.dtshd"
                         sr = a_info.get("sample_rate")
