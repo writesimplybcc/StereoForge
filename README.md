@@ -79,6 +79,15 @@ StereoForge relies on standard tools for hardware encoding, container packaging,
   - Direct bitstream copy for Dolby Atmos, TrueHD, DTS:X, and DTS-HD Master Audio.
   - Lossless encoding of multi-channel FLAC/WAV audio into bit-perfect, certified **DTS-HD Master Audio 5.1/7.1** (`.dtshd`) bitstreams via Callum's high-speed **Subwoofa** engine ([@callumcomplains](https://github.com/callumcomplains/subwoofa)), multiplexed natively into compliant 3D Blu-ray ISOs.
   - Subwoofa is an integral part of the StereoForge installation package (pre-bundled with the portable distribution and auto-downloaded on launch).
+- **Direct 3D Blu-ray Burning Suite (`stereoforge.pipeline.burner`):**
+  - Auto-detects connected optical writers (BD-R / BD-RE) across Windows, Linux, and macOS.
+  - Sizing Advisor automatically analyzes the ISO and advises whether a **BD-25 (Single Layer)** or **BD-50 (Dual Layer DL)** disc is required.
+  - Direct 1-click burning with write speed control (2x / 4x / Max) and post-burn verification via ImgBurn or Windows Native `isoburn.exe`.
+- **Chapter Markers & Preservation (`stereoforge.pipeline.chapters`):**
+  - Automatically preserves source chapters from MKV/MP4 files or generates custom chapter intervals (e.g., every 5 or 10 minutes).
+  - Authors custom chapter points into tsMuxeR for physical Blu-ray remotes and into Matroska for VR video players.
+- **Batch Processing Queue:**
+  - Multi-file and multi-folder batch table with persistent queue serialization (JSON) and CLI background processing.
 
 ---
 

@@ -33,6 +33,7 @@ class EncodeJob:
     layout_override: Optional[StereoFormat] = None
     auto_detect_inverted_eyes: bool = False
     engine_mode: str = "native_mvc"  # "native_mvc" (default) or "gpu_turbo"
+    chapter_interval_minutes: Optional[int] = 5
 
 
 @dataclass
@@ -173,12 +174,14 @@ class StereoForgePipeline:
                     audio_source_path=job.input_file,
                     audio_streams=profile.audio_streams,
                     subtitle_streams=profile.subtitle_streams,
-                    fps=str(round(profile.fps, 3))
+                    fps=str(round(profile.fps, 3)),
+                    chapter_interval_minutes=job.chapter_interval_minutes if job.chapter_interval_minutes is not None else 5
                 )
             else:
                 report("Muxing: Packaging 3D stereoscopic Matroska (.mkv) with mkvmerge...", 0.85)
                 if job.engine_mode == "native_mvc" and dep_mvc and dep_mvc.exists():
                     from stereoforge.pipeline.muxer import interleave_mvc_streams, find_mkvmerge
+                    from stereoforge.pipeline.chapters import extract_chapters, create_ogm_chapters_file
                     interleaved_264 = temp_dir / "interleaved_mvc.264"
                     interleave_mvc_streams(base_264, dep_mvc, interleaved_264)
                     mkvmerge_bin = find_mkvmerge()
@@ -194,6 +197,16 @@ class StereoForgePipeline:
                     ])
                     if job.input_file and job.input_file.exists():
                         cmd_mkv.extend(["-D", str(job.input_file)])
+
+                    # Add chapters to mkvmerge command
+                    chapters = extract_chapters(job.input_file) if job.input_file else []
+                    temp_chap = temp_dir / "temp_chapters.txt"
+                    if chapters:
+                        create_ogm_chapters_file(chapters, temp_chap)
+                        cmd_mkv.extend(["--chapters", str(temp_chap)])
+                    elif job.chapter_interval_minutes and job.chapter_interval_minutes > 0:
+                        cmd_mkv.extend(["--generate-chapters", f"interval:{job.chapter_interval_minutes}m"])
+
                     try:
                         import subprocess
                         res = subprocess.run(cmd_mkv, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -206,7 +219,8 @@ class StereoForgePipeline:
                             output_mkv_path=job.output_file,
                             audio_source_path=job.input_file,
                             title=job.title,
-                            fps=str(round(profile.fps, 3))
+                            fps=str(round(profile.fps, 3)),
+                            chapter_interval_minutes=job.chapter_interval_minutes
                         )
                 else:
                     mux_success = self.muxer.mux_3d_mkv(
@@ -215,7 +229,8 @@ class StereoForgePipeline:
                         output_mkv_path=job.output_file,
                         audio_source_path=job.input_file,
                         title=job.title,
-                        fps=str(round(profile.fps, 3))
+                        fps=str(round(profile.fps, 3)),
+                        chapter_interval_minutes=job.chapter_interval_minutes
                     )
 
             elapsed = time.time() - start_time

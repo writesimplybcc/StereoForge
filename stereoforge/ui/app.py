@@ -13,7 +13,7 @@ try:
         QLabel, QPushButton, QFileDialog, QSlider, QComboBox, QCheckBox,
         QProgressBar, QTextEdit, QGroupBox, QSplitter, QLineEdit,
         QScrollArea, QFrame, QSizePolicy, QTabWidget, QTableWidget,
-        QTableWidgetItem, QHeaderView, QAbstractItemView
+        QTableWidgetItem, QHeaderView, QAbstractItemView, QDialog, QMessageBox
     )
     from PySide6.QtCore import Qt, QThread, Signal, QSettings
     from PySide6.QtGui import QIcon, QFont, QColor, QClipboard
@@ -26,6 +26,8 @@ from stereoforge.pipeline.orchestrator import StereoForgePipeline, EncodeJob, Ba
 from stereoforge.pipeline.ingest import IngestionEngine, StereoFormat, find_matching_eye_file
 from stereoforge.pipeline.pass1_base import detect_best_h264_encoder
 from stereoforge.pipeline.muxer import find_tsmuxer, find_subwoofa
+from stereoforge.pipeline.burner import OpticalDrive, DiscMediaAdvisor, detect_optical_drives, BurnerEngine
+from stereoforge.pipeline.chapters import Chapter, extract_chapters
 from stereoforge.cli import scan_batch_jobs
 from stereoforge_core.python.native_bridge import NativeMVCEngine
 from stereoforge.ui.preview import AnaglyphPreviewDialog
@@ -213,6 +215,173 @@ class BatchWorkerThread(QThread if HAS_PYSIDE6 else object):
         except Exception as e:
             if HAS_PYSIDE6:
                 self.batch_finished_signal.emit([])
+
+
+class BurnWorkerThread(QThread if HAS_PYSIDE6 else object):
+    """Background worker for direct optical disc burning."""
+    if HAS_PYSIDE6:
+        log_signal = Signal(str)
+        finished_signal = Signal(bool)
+
+    def __init__(self, iso_path: Path, drive_target: str, speed: str, verify: bool):
+        if HAS_PYSIDE6:
+            super().__init__()
+        self.iso_path = iso_path
+        self.drive_target = drive_target
+        self.speed = speed
+        self.verify = verify
+
+    def run(self):
+        engine = BurnerEngine()
+        success = engine.burn(
+            iso_path=self.iso_path,
+            drive_target=self.drive_target,
+            write_speed=self.speed,
+            verify=self.verify,
+            log_callback=lambda msg: self.log_signal.emit(msg) if HAS_PYSIDE6 else None
+        )
+        if HAS_PYSIDE6:
+            self.finished_signal.emit(success)
+
+
+class BurnDiscDialog(QDialog if HAS_PYSIDE6 else object):
+    """Interactive Direct Disc Burner Dialog."""
+
+    def __init__(self, iso_path: Path, parent=None):
+        if not HAS_PYSIDE6:
+            return
+        super().__init__(parent)
+        self.iso_path = iso_path
+        self.worker: Optional[BurnWorkerThread] = None
+        self.drives: List[OpticalDrive] = []
+        self.setWindowTitle("StereoForge — Direct 3D Blu-ray Disc Burner")
+        self.setMinimumSize(580, 480)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # Header Banner
+        header = QLabel("💿 Direct 3D Blu-ray Burning Suite")
+        header.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        layout.addWidget(header)
+
+        # ISO Info Box
+        iso_box = QGroupBox("Target Disc Image (ISO)")
+        iso_layout = QVBoxLayout(iso_box)
+        self.iso_path_lbl = QLabel(f"<b>Path:</b> {self.iso_path}")
+        self.iso_path_lbl.setWordWrap(True)
+        iso_layout.addWidget(self.iso_path_lbl)
+
+        # Sizing Advisor
+        size_bytes = self.iso_path.stat().st_size if self.iso_path.exists() else 0
+        advisor = DiscMediaAdvisor.analyze(size_bytes)
+        badge_color = "#16A34A" if advisor["fits_bd25"] else "#D97706"
+        self.size_lbl = QLabel(
+            f"<b>Capacity Advisor:</b> {advisor['note']}<br>"
+            f"<b>Recommended Media:</b> <span style='color: {badge_color}; font-weight: bold;'>{advisor['recommended_media']}</span>"
+        )
+        self.size_lbl.setWordWrap(True)
+        iso_layout.addWidget(self.size_lbl)
+        layout.addWidget(iso_box)
+
+        # Drive & Settings Box
+        burn_box = QGroupBox("Burning Hardware & Options")
+        burn_layout = QVBoxLayout(burn_box)
+        burn_layout.setSpacing(8)
+
+        # Drive row
+        d_row = QHBoxLayout()
+        d_row.addWidget(QLabel("Target Optical Drive:"))
+        self.drive_combo = QComboBox()
+        self.refresh_drives_btn = QPushButton("🔄 Refresh")
+        self.refresh_drives_btn.clicked.connect(self.populate_drives)
+        d_row.addWidget(self.drive_combo, stretch=1)
+        d_row.addWidget(self.refresh_drives_btn)
+        burn_layout.addLayout(d_row)
+
+        # Speed and options row
+        opt_row = QHBoxLayout()
+        opt_row.addWidget(QLabel("Write Speed:"))
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItems(["2x (Recommended / Lowest Jitter)", "4x (Balanced)", "8x", "Maximum"])
+        opt_row.addWidget(self.speed_combo, stretch=1)
+
+        self.verify_cb = QCheckBox("Verify Disc After Burning")
+        self.verify_cb.setChecked(True)
+        opt_row.addWidget(self.verify_cb)
+        burn_layout.addLayout(opt_row)
+
+        # Detected Engine info
+        engine_info = BurnerEngine().get_preferred_burner()
+        eng_lbl = QLabel(f"⚡ <b>Detected Burner Engine:</b> {engine_info['label']}")
+        eng_lbl.setStyleSheet("color: #64748B; font-size: 11px;")
+        burn_layout.addWidget(eng_lbl)
+        layout.addWidget(burn_box)
+
+        # Console Log
+        self.log_edit = QTextEdit()
+        self.log_edit.setReadOnly(True)
+        self.log_edit.setFixedHeight(120)
+        self.log_edit.setStyleSheet("background: #0F172A; color: #38BDF8; font-family: Consolas, monospace; font-size: 11px;")
+        layout.addWidget(self.log_edit)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        self.burn_btn = QPushButton("🔥 Start Disc Burn")
+        self.burn_btn.setFixedHeight(40)
+        self.burn_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.burn_btn.clicked.connect(self.start_burn)
+        btn_row.addWidget(self.burn_btn, stretch=1)
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(40)
+        close_btn.clicked.connect(self.reject)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        self.populate_drives()
+
+    def populate_drives(self):
+        self.drive_combo.clear()
+        self.drives = detect_optical_drives()
+        if self.drives:
+            for d in self.drives:
+                self.drive_combo.addItem(str(d), d.drive_letter)
+        else:
+            self.drive_combo.addItem("No optical burner detected (Insert disc or attach USB BD burner)", "")
+
+    def append_log(self, msg: str):
+        self.log_edit.append(msg)
+
+    def start_burn(self):
+        cur_data = self.drive_combo.currentData()
+        if not cur_data:
+            QMessageBox.warning(self, "No Drive Selected", "Please select a valid optical writer drive.")
+            return
+
+        selected_speed = self.speed_combo.currentText().split()[0]
+        verify = self.verify_cb.isChecked()
+
+        self.burn_btn.setEnabled(False)
+        self.refresh_drives_btn.setEnabled(False)
+        self.append_log(f"Preparing burn: {self.iso_path.name} -> {cur_data} at {selected_speed}...")
+
+        self.worker = BurnWorkerThread(self.iso_path, cur_data, selected_speed, verify)
+        self.worker.log_signal.connect(self.append_log)
+        self.worker.finished_signal.connect(self.on_burn_finished)
+        self.worker.start()
+
+    def on_burn_finished(self, success: bool):
+        self.burn_btn.setEnabled(True)
+        self.refresh_drives_btn.setEnabled(True)
+        if success:
+            self.append_log("🎉 Disc burning and verification completed successfully!")
+            QMessageBox.information(self, "Burn Complete", "3D Blu-ray disc burned successfully!")
+        else:
+            self.append_log("❌ Disc burning failed or was aborted.")
+            QMessageBox.critical(self, "Burn Failed", "Disc burning failed. Check log for details.")
 
 
 class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
@@ -467,6 +636,18 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         title_row.addWidget(self.title_edit, stretch=1)
         out_layout.addLayout(title_row)
 
+        chap_row = QHBoxLayout()
+        chap_row.addWidget(QLabel("Chapters:"))
+        self.chapter_mode_combo = QComboBox()
+        self.chapter_mode_combo.addItems([
+            "Auto-Preserve Source (or Interval 5m)",
+            "Interval: Every 5 minutes",
+            "Interval: Every 10 minutes",
+            "Disabled (No Chapters)"
+        ])
+        chap_row.addWidget(self.chapter_mode_combo, stretch=1)
+        out_layout.addLayout(chap_row)
+
         left_layout.addWidget(output_box)
         left_layout.addStretch()
 
@@ -489,13 +670,23 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         mon_layout = QVBoxLayout(monitor_box)
         mon_layout.setSpacing(10)
 
-        # Giant Start Button
+        # Action Buttons (Start + Burn)
+        action_row = QHBoxLayout()
         self.start_btn = QPushButton("🚀 Start 3D Encode")
         self.start_btn.setFixedHeight(50)
         self.start_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
         self.start_btn.setCursor(Qt.PointingHandCursor)
         self.start_btn.clicked.connect(self.start_encode)
-        mon_layout.addWidget(self.start_btn)
+        action_row.addWidget(self.start_btn, stretch=3)
+
+        self.burn_btn = QPushButton("🔥 Burn ISO...")
+        self.burn_btn.setFixedHeight(50)
+        self.burn_btn.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.burn_btn.setCursor(Qt.PointingHandCursor)
+        self.burn_btn.setToolTip("Directly burn 3D Blu-ray ISO to a physical BD-R / BD-RE disc")
+        self.burn_btn.clicked.connect(self.on_burn_clicked)
+        action_row.addWidget(self.burn_btn, stretch=1)
+        mon_layout.addLayout(action_row)
 
         # Status Label + Progress Bar
         status_row = QHBoxLayout()
@@ -645,6 +836,10 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         self.batch_open_output_btn.setEnabled(False)
         self.batch_open_output_btn.clicked.connect(self.open_batch_output_folder)
         status_row.addWidget(self.batch_open_output_btn)
+
+        self.batch_burn_btn = QPushButton("🔥 Burn Selected ISO...")
+        self.batch_burn_btn.clicked.connect(self.on_batch_burn_clicked)
+        status_row.addWidget(self.batch_burn_btn)
         bottom_box.addLayout(status_row)
 
         self.batch_progress_bar = QProgressBar()
@@ -1288,6 +1483,16 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
 
         selected_engine = "gpu_turbo" if self.engine_mode_combo.currentIndex() == 1 else "native_mvc"
 
+        chap_mode = self.chapter_mode_combo.currentIndex()
+        if chap_mode == 0:
+            chap_interval = 5
+        elif chap_mode == 1:
+            chap_interval = 5
+        elif chap_mode == 2:
+            chap_interval = 10
+        else:
+            chap_interval = None
+
         job = EncodeJob(
             input_file=self.input_file,
             right_file=right_input,
@@ -1298,7 +1503,8 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
             title=custom_title,
             layout_override=layout_override,
             auto_detect_inverted_eyes=self.auto_fix_inverted_cb.isChecked(),
-            engine_mode=selected_engine
+            engine_mode=selected_engine,
+            chapter_interval_minutes=chap_interval
         )
 
         self.start_btn.setEnabled(False)
@@ -1325,6 +1531,40 @@ class StereoForgeWindow(QMainWindow if HAS_PYSIDE6 else object):
         else:
             self.status_label.setText("Status: ❌ Encode Failed")
             self.log("❌ Encode failed. Check logs above for details.")
+
+    def on_burn_clicked(self):
+        target_path = Path(self.output_path_edit.text().strip()) if self.output_path_edit.text().strip() else None
+        if not target_path or not target_path.exists() or target_path.suffix.lower() != ".iso":
+            iso_file, _ = QFileDialog.getOpenFileName(
+                self, "Select 3D Blu-ray ISO to Burn", "", "Blu-ray Disc Images (*.iso);;All Files (*.*)"
+            )
+            if not iso_file:
+                return
+            target_path = Path(iso_file)
+
+        dlg = BurnDiscDialog(target_path, self)
+        dlg.exec()
+
+    def on_batch_burn_clicked(self):
+        sel = self.batch_table.selectedItems()
+        target_iso = None
+        if sel:
+            row = sel[0].row()
+            if row < len(self.batch_jobs):
+                cand = self.batch_jobs[row].output_file
+                if cand.suffix.lower() == ".iso" and cand.exists():
+                    target_iso = cand
+
+        if not target_iso:
+            iso_file, _ = QFileDialog.getOpenFileName(
+                self, "Select 3D Blu-ray ISO to Burn", "", "Blu-ray Disc Images (*.iso);;All Files (*.*)"
+            )
+            if not iso_file:
+                return
+            target_iso = Path(iso_file)
+
+        dlg = BurnDiscDialog(target_iso, self)
+        dlg.exec()
 
 
 def main():

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 import subprocess
 import shutil
+from stereoforge.pipeline.chapters import Chapter, extract_chapters, format_tsmuxer_chapter_option, create_ogm_chapters_file
 
 
 def find_mkvmerge(preferred: Optional[str] = None) -> str:
@@ -239,7 +240,9 @@ class MuxerEngine:
         audio_source_path: Optional[Path] = None,
         subtitle_paths: Optional[List[Path]] = None,
         title: Optional[str] = None,
-        fps: Optional[str] = None
+        fps: Optional[str] = None,
+        chapters: Optional[List[Chapter]] = None,
+        chapter_interval_minutes: Optional[int] = None
     ) -> bool:
         """Packs Base View + Right Eye into a clean stereoscopic Matroska container."""
         fps_str = str(fps) if fps else "24000/1001"
@@ -312,10 +315,25 @@ class MuxerEngine:
                 if sub.exists():
                     cmd.append(str(sub))
 
+        temp_chap_file: Optional[Path] = None
+        if not chapters and audio_source_path and audio_source_path.exists():
+            chapters = extract_chapters(audio_source_path)
+
+        if chapters:
+            temp_chap_file = output_mkv_path.parent / "temp_chapters.txt"
+            create_ogm_chapters_file(chapters, temp_chap_file)
+            cmd.extend(["--chapters", str(temp_chap_file)])
+        elif chapter_interval_minutes and chapter_interval_minutes > 0:
+            cmd.extend(["--generate-chapters", f"interval:{chapter_interval_minutes}m"])
+
         try:
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            if temp_chap_file and temp_chap_file.exists():
+                temp_chap_file.unlink()
             return True
         except subprocess.CalledProcessError as e:
+            if temp_chap_file and temp_chap_file.exists():
+                temp_chap_file.unlink()
             print(f"[StereoForge] MKV muxing failed: {e.stderr}")
             return False
 
@@ -329,7 +347,9 @@ class MuxerEngine:
         subtitle_streams: Optional[List[Dict[str, Any]]] = None,
         subtitle_paths: Optional[List[Path]] = None,
         fps: str = "23.976",
-        is_iso: bool = True
+        is_iso: bool = True,
+        chapters: Optional[List[Chapter]] = None,
+        chapter_interval_minutes: int = 5
     ) -> bool:
         """Generates a tsMuxeR meta script and authors a 3D Blu-ray structure or ISO.
 
@@ -342,8 +362,12 @@ class MuxerEngine:
                 "Please download tsMuxeR (https://github.com/justdan96/tsMuxer) and place tsMuxeR.exe "
                 "in your system PATH, C:\\tsMuxeR, or StereoForge\\tools folder."
             )
+        if not chapters and audio_source_path and audio_source_path.exists():
+            chapters = extract_chapters(audio_source_path)
+
+        chap_opt = format_tsmuxer_chapter_option(chapters, auto_interval_minutes=chapter_interval_minutes)
         # tsMuxeR uses --blu-ray for both folder structures and .iso disk images
-        meta_lines = ["MUXOPT --blu-ray --no-pcr-on-video-pid --new-audio-pes --vbr --auto-chapters=5"]
+        meta_lines = [f"MUXOPT --blu-ray --no-pcr-on-video-pid --new-audio-pes --vbr {chap_opt}"]
 
         # Base View Track (Left Eye) - Quoted paths with forward slashes for cross-platform tsMuxeR
         base_str = str(base_video_path).replace("\\", "/")

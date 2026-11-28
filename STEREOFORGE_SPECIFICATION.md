@@ -112,32 +112,44 @@ StereoForge utilizes a decoupled, heterogeneous pipeline that maximizes the capa
 
 ---
 
-## 5. Development Roadmap
+## 5. Development Roadmap (Completed - v1.0.0 Production Release)
 
 ### Phase 1: The MVC Core Engine (`stereoforge-core`)
-- [ ] Fork minimal x264 core bitstream engine.
-- [ ] Implement Annex H bitstream syntax: Subset SPS and Prefix NAL (Type 14).
-- [ ] Implement Coded Slice Extension (NAL Unit Type 20) writer.
-- [ ] Implement inter-view reference injection: allow the encoder to accept external reconstructed Left Eye YUV frames into `RefPicList0`.
-- [ ] Verify elementary `.mvc` bitstream syntax using `edge264-mvc` and `tsMuxeR`.
+- [x] Fork minimal x264 core bitstream engine.
+- [x] Implement Annex H bitstream syntax: Subset SPS and Prefix NAL (Type 14).
+- [x] Implement Coded Slice Extension (NAL Unit Type 20) writer.
+- [x] Implement inter-view reference injection: allow the encoder to accept external reconstructed Left Eye YUV frames into `RefPicList0`.
+- [x] Verify elementary `.mvc` bitstream syntax using `edge264-mvc` and `tsMuxeR`.
 
 ### Phase 2: Ingestion, Manifest & Hardware Pipeline (`stereoforge-pipe`)
-- [ ] Build FFmpeg ingestion wrapper: auto-crop SBS/TAB, demux dual files, decode legacy 3D-AVI.
-- [ ] Implement GPU Pass 1 runner (NVENC/QSV/VideoToolbox) generating `left.264`.
-- [ ] Implement `frame_manifest.log` generator (recording frame types, POC, PTS/DTS).
-- [ ] Build the GPU-accelerated decoder bridge to feed reconstructed Left frames to Pass 2.
+- [x] Build FFmpeg ingestion wrapper: auto-crop SBS/TAB, demux dual files, decode legacy 3D-AVI.
+- [x] Implement GPU Pass 1 runner (NVENC/QSV/VideoToolbox) generating `left.264`.
+- [x] Implement `frame_manifest.log` generator (recording frame types, POC, PTS/DTS).
+- [x] Build the GPU-accelerated decoder bridge to feed reconstructed Left frames to Pass 2.
+- [x] Automatic HDR-to-SDR tone mapping (BT.2020 / PQ / HLG -> BT.709 8-bit).
+- [x] Motion-adaptive deinterlacing (`bwdif`) for legacy 2000s 3D camcorder footage (3D-AVI / AVCHD MTS).
 
-### Phase 3: Multiplexing Automation
-- [ ] Integrate background orchestration for `tsMuxeR` (generating 3D Blu-ray BDMV / ISO).
-- [ ] Integrate background orchestration for `mkvmerge` (generating 3D MVC Matroska with `StereoMode=1`).
-- [ ] Implement audio stream-copy and `.SUP` PGS subtitle injection.
+### Phase 3: Multiplexing & Audio Automation
+- [x] Integrate background orchestration for `tsMuxeR` (generating 3D Blu-ray BDMV / ISO).
+- [x] Integrate background orchestration for `mkvmerge` (generating 3D MVC Matroska with `StereoMode=1`).
+- [x] Full multi-track audio stream preservation with TrueHD/Atmos, DTS-HD MA, and AC-3 passthrough.
+- [x] Multi-channel FLAC/WAV to lossless **DTS-HD Master Audio 5.1/7.1** (`.dtshd`) authoring via **Subwoofa** (by Callum @callumcomplains).
+- [x] 3D Subtitles (`.SUP` / PGS bitmaps + 3D plane offsets and SRT/ASS text subtitles).
+- [x] Chapter marker preservation (from MKV/MP4) and custom interval auto-generation.
 
-### Phase 4: Graphical User Interface (`stereoforge-gui`)
-- [ ] Build clean, responsive Qt 6 (PySide6 / C++) desktop interface.
-- [ ] Implement drag-and-drop landing zones for SBS, TAB, and Dual files.
-- [ ] Implement Dubois Anaglyph preview player with real-time scrub bar.
-- [ ] Implement automated optical flow disparity check for inverted eye detection.
-- [ ] Implement Preset switcher + Uncapped Bitrate Slider.
+### Phase 4: Graphical User Interface & Batch Queue (`stereoforge-gui`)
+- [x] Clean, responsive Qt 6 (PySide6) desktop interface with 8 custom light/dark themes.
+- [x] Multi-job Batch Processing Queue with JSON serialization and CLI batch mode.
+- [x] Real-time Dubois Anaglyph preview player with scrub bar and eye-swapping toggle.
+- [x] Automated optical flow disparity check for inverted eye detection.
+- [x] Uncapped Bitrate Slider and Blu-ray compliant presets.
+
+### Phase 5: Direct Disc Burning Suite & Cross-Platform Packaging
+- [x] Direct optical drive detection and BD-25 / BD-50 disc media sizing advisor.
+- [x] Direct 3D Blu-ray disc burning via ImgBurn (pro layer-break control) and Windows Native `isoburn.exe`.
+- [x] Standalone Windows Portable Distribution with pre-bundled tools (`StereoForge_Portable_Win64.zip`).
+- [x] Standalone macOS (`scripts/package_macos.sh`) and Linux (`scripts/package_linux.sh`) packagers.
+- [x] GitHub Actions CI/CD matrix workflow (`.github/workflows/build_and_release.yml`).
 
 ---
 
